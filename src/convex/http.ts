@@ -46,6 +46,84 @@ http.route({
   })
 });
 
+/** POST /worker/createSongAndAssign — create a song and assign recordings to it. */
+http.route({
+  path: '/worker/createSongAndAssign',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { title, notes, recordingIds } = await request.json();
+    const songId = await ctx.runMutation(api.songs.create, {
+      title,
+      notes
+    });
+    for (const recordingId of recordingIds) {
+      await ctx.runMutation(api.recordings.assignToSong, {
+        recordingId,
+        songId
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, songId }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/assignToSong — assign a recording to an existing song. */
+http.route({
+  path: '/worker/assignToSong',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { recordingId, songId } = await request.json();
+    await ctx.runMutation(api.recordings.assignToSong, {
+      recordingId,
+      songId
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/listSongs — list all songs for LLM context. */
+http.route({
+  path: '/worker/listSongs',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const songs = await ctx.runQuery(api.songs.list);
+    return new Response(JSON.stringify({ songs }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/listUngrouped — list ungrouped recordings. */
+http.route({
+  path: '/worker/listUngrouped',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const recordings = await ctx.runQuery(api.recordings.listUngrouped);
+    return new Response(JSON.stringify({ recordings }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
 /** POST /worker/storeMatch — store a riff match result. */
 http.route({
   path: '/worker/storeMatch',

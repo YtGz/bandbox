@@ -12,6 +12,7 @@ from .trim import detect_boundaries
 from .encode import split_and_encode
 from .analyze import segment_riffs, extract_fingerprint, extract_contour
 from .match import find_matches
+from .group import group_recordings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -186,6 +187,31 @@ def run_batch_matching(processed_ids: list[str], client: ConvexWorkerClient) -> 
             )
 
     log.info("Batch matching complete")
+
+    # Run LLM grouping on ungrouped recordings
+    try:
+        ungrouped = client.list_ungrouped()
+        if ungrouped:
+            existing_songs = client.list_songs()
+            all_riffs = client.get_all_riffs()
+
+            # Build riffs-by-recording lookup
+            riffs_by_recording: dict[str, list[dict]] = {}
+            for riff in all_riffs:
+                rec_id = riff.get("recordingId", "")
+                riffs_by_recording.setdefault(rec_id, []).append(riff)
+
+            # Get all riff matches
+            # (we already stored them above, re-fetch for completeness)
+            group_recordings(
+                ungrouped_recordings=ungrouped,
+                existing_songs=existing_songs,
+                riff_matches=matches,
+                riffs_by_recording=riffs_by_recording,
+                convex_client=client,
+            )
+    except Exception:
+        log.exception("Error during LLM grouping")
 
 
 def run() -> None:

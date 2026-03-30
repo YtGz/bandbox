@@ -76,3 +76,44 @@ class ConvexWorkerClient:
         )
         resp.raise_for_status()
         return resp.json()["riffs"]
+
+    def list_songs(self) -> list[dict]:
+        """Fetch all songs."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/listSongs",
+            json={},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["songs"]
+
+    def list_ungrouped(self) -> list[dict]:
+        """Fetch ungrouped recordings."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/listUngrouped",
+            json={},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["recordings"]
+
+    def create_song_and_assign(
+        self, title: str, notes: str, recording_ids: list[str]
+    ) -> str:
+        """Create a song and assign recordings to it."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/createSongAndAssign",
+            json={"title": title, "notes": notes, "recordingIds": recording_ids},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["songId"]
+
+    def assign_to_song(self, recording_id: str, song_id: str) -> None:
+        """Assign a recording to an existing song."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/assignToSong",
+            json={"recordingId": recording_id, "songId": song_id},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
