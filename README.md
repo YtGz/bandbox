@@ -44,14 +44,14 @@ bunx convex dev
 
 ### Commands
 
-| Command | Description |
-|---|---|
-| `bun run dev` | Start development server |
-| `bun run build` | Build for production |
-| `bun run check` | Type-check the project |
-| `bun run lint` | Lint and format check |
-| `bun run format` | Auto-format all files |
-| `bun run test` | Run unit tests |
+| Command          | Description              |
+| ---------------- | ------------------------ |
+| `bun run dev`    | Start development server |
+| `bun run build`  | Build for production     |
+| `bun run check`  | Type-check the project   |
+| `bun run lint`   | Lint and format check    |
+| `bun run format` | Auto-format all files    |
+| `bun run test`   | Run unit tests           |
 
 ## Documentation
 

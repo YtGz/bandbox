@@ -110,11 +110,11 @@ Caddy routes `/pocket-id/*` to the Pocket-ID container.
 
 ### Protected Routes
 
-| Path | Auth method |
-|---|---|
-| `/api/upload` | API key (Pi) |
-| `/login`, `/callback` | Public |
-| Everything else | Session cookie (Pocket-ID OIDC) |
+| Path                  | Auth method                     |
+| --------------------- | ------------------------------- |
+| `/api/upload`         | API key (Pi)                    |
+| `/login`, `/callback` | Public                          |
+| Everything else       | Session cookie (Pocket-ID OIDC) |
 
 ---
 
@@ -137,12 +137,14 @@ The main view. Three sections, top to bottom:
 **Processing banner** — only visible when recordings are being processed. Shows a pulsing animation and text like "Analyzing... 3 of 8 recordings remaining". Disappears automatically when all recordings reach `grouped` or `ungrouped` state. This is reactive — driven by a Convex subscription to a query that filters recordings by processing states.
 
 **Song groups** — each song is a collapsible card showing:
+
 - Song title (editable inline)
 - Take count and date of most recent take
 - Inline audio player for the most recent take's `_song.opus`
 - Expand to see all takes as a list
 
 **Unsorted section** — appears at the bottom when recordings exist in `ungrouped` state. Each unsorted recording shows:
+
 - Original filename
 - If still processing: a pulsing state badge (`normalizing`, `trimming`, `analyzing`)
 - If analysis complete but unmatched: an "Assign to song" dropdown listing all existing songs plus a "Create new song" option
@@ -164,7 +166,7 @@ Each take is a card containing:
 - **Date and take number** (e.g., "Mar 11 — Take 3")
 - **Audio player** — plays `_song.opus` (the trimmed version)
 - **Metadata row** — tempo, key, duration, instrumentation guess
-- **Transcript** — if the pre-song speech was transcribed, shown as a quote (e.g., *"okay from the top, doom riff"*)
+- **Transcript** — if the pre-song speech was transcribed, shown as a quote (e.g., _"okay from the top, doom riff"_)
 - **Trim confidence indicator**:
   - High confidence (≥85%): green checkmark, no special treatment
   - Medium confidence (60–84%): amber warning icon with the text "Xsec trimmed"
@@ -237,6 +239,7 @@ Three audio segments displayed as a horizontal timeline:
 **"Play from 10s before cut" button**: This is the key usability feature. It plays the last 10 seconds of the "Before" segment followed immediately by the first few seconds of the "Song" segment, so the user can hear the exact transition point and judge whether the trim was correct. Implemented by seeking the "Before" player to its final 10 seconds, playing it, and when it ends, immediately starting the "Song" player. No server-side stitching needed.
 
 **"Undo trim" button**: Opens a confirmation dialog explaining that this will make the player use the full FLAC instead of the trimmed Opus. When confirmed:
+
 - A Convex mutation sets `cutStartSec` and `cutEndSec` to null and clears `trimMethod`
 - The main audio player for this recording switches to serving the full FLAC file instead of `_song.opus`
 - The trim review section collapses and shows "Trim removed — playing full recording"
@@ -245,6 +248,7 @@ Three audio segments displayed as a horizontal timeline:
 ### Adjustable Trim (v2 Enhancement)
 
 A future improvement: instead of binary undo, allow the user to drag the trim points on a waveform. This would:
+
 - Display a simplified waveform of the full FLAC
 - Show draggable markers at the current cut points
 - Preview playback from any point
@@ -391,12 +395,12 @@ Two HTTP routes authenticated by a worker API key:
 
 ### Docker Compose Services
 
-| Service | Image/Build | Ports | Volumes |
-|---|---|---|---|
-| `caddy` | `caddy:2-alpine` | 80, 443 | Caddyfile, caddy_data |
-| `sveltekit` | Built from `./sveltekit` | 3000 (internal) | audio_data |
-| `python-worker` | Built from `./python-worker` | None | audio_data |
-| `pocket-id` | `stonith404/pocket-id` | 8080 (internal) | pocket_id_data |
+| Service         | Image/Build                  | Ports           | Volumes               |
+| --------------- | ---------------------------- | --------------- | --------------------- |
+| `caddy`         | `caddy:2-alpine`             | 80, 443         | Caddyfile, caddy_data |
+| `sveltekit`     | Built from `./sveltekit`     | 3000 (internal) | audio_data            |
+| `python-worker` | Built from `./python-worker` | None            | audio_data            |
+| `pocket-id`     | `stonith404/pocket-id`       | 8080 (internal) | pocket_id_data        |
 
 ### Volumes
 
@@ -444,17 +448,17 @@ The FLAC is never deleted. It serves as the source of truth for re-trimming, ful
 
 ## 13. Implementation Phases
 
-| Phase | Deliverable | What it enables |
-|---|---|---|
-| **1** | Docker Compose skeleton with Caddy, SvelteKit shell, Pocket-ID | Working auth flow, empty dashboard |
-| **2** | Convex schema, basic queries/mutations | Data layer ready |
-| **3** | Upload endpoint, Pi integration | Files arrive on the server |
-| **4** | Dashboard page with song groups, unsorted section, audio player | Browse and play recordings (manually added to Convex for testing) |
-| **5** | Python worker: normalize → trim → encode | Processed audio files appear, state updates flow to frontend |
-| **6** | Trim review and undo UI | Users can audit and correct trim decisions |
-| **7** | Python worker: feature extraction, riff fingerprinting, DTW matching | Riff data populates in Convex |
-| **8** | LLM grouping, song creation, auto-assignment | Recordings sort themselves into songs |
-| **9** | Manual corrections: reassign, rename, merge, dissolve | Users can fix grouping errors |
-| **10** | Pi upload script update for new endpoint | Full end-to-end flow from practice to webapp |
+| Phase  | Deliverable                                                          | What it enables                                                   |
+| ------ | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **1**  | Docker Compose skeleton with Caddy, SvelteKit shell, Pocket-ID       | Working auth flow, empty dashboard                                |
+| **2**  | Convex schema, basic queries/mutations                               | Data layer ready                                                  |
+| **3**  | Upload endpoint, Pi integration                                      | Files arrive on the server                                        |
+| **4**  | Dashboard page with song groups, unsorted section, audio player      | Browse and play recordings (manually added to Convex for testing) |
+| **5**  | Python worker: normalize → trim → encode                             | Processed audio files appear, state updates flow to frontend      |
+| **6**  | Trim review and undo UI                                              | Users can audit and correct trim decisions                        |
+| **7**  | Python worker: feature extraction, riff fingerprinting, DTW matching | Riff data populates in Convex                                     |
+| **8**  | LLM grouping, song creation, auto-assignment                         | Recordings sort themselves into songs                             |
+| **9**  | Manual corrections: reassign, rename, merge, dissolve                | Users can fix grouping errors                                     |
+| **10** | Pi upload script update for new endpoint                             | Full end-to-end flow from practice to webapp                      |
 
 **Phases 1–4** produce a usable app for uploading and listening. **Phases 5–6** add automated processing with trim review. **Phases 7–8** add the intelligence. **Phase 9** adds the human-in-the-loop corrections. **Phase 10** closes the loop with the Pi.
