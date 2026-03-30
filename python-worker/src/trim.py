@@ -228,7 +228,13 @@ def _pitched_content(y: np.ndarray, sr: int) -> TrimResult | None:
 def detect_boundaries(audio_path: str) -> TrimResult:
     """Run all detection methods and return the best result.
 
-    Falls back to the full recording if no method succeeds.
+    Selection strategy: prefer the earliest detection that clears a minimum
+    confidence threshold. This prevents an overconfident energy wall from
+    cutting a legitimate ambient or acoustic intro that a lower-confidence
+    method correctly identified as music.
+
+    Falls back to highest confidence if all detections start at similar times,
+    and to the full recording if no method succeeds.
     """
     y, sr = librosa.load(audio_path, sr=None, mono=True)
     duration = float(len(y) / sr)
@@ -252,5 +258,29 @@ def detect_boundaries(audio_path: str) -> TrimResult:
             method="none",
         )
 
-    # Pick the result with the highest confidence
-    return max(results, key=lambda r: r.confidence)
+    if len(results) == 1:
+        return results[0]
+
+    # Minimum confidence to be considered viable
+    MIN_CONFIDENCE = 0.3
+
+    viable = [r for r in results if r.confidence >= MIN_CONFIDENCE]
+    if not viable:
+        viable = results  # Fall back to all if none clear threshold
+
+    # If two detections start more than 5 seconds apart, prefer the earlier
+    # one — it likely caught a musical intro that the later method missed.
+    EARLY_THRESHOLD_SEC = 5.0
+
+    viable.sort(key=lambda r: r.start_sec)
+    earliest = viable[0]
+
+    # Check if any later detection starts significantly after the earliest
+    # If so, the earliest is probably right (it caught an intro)
+    for r in viable[1:]:
+        if r.start_sec - earliest.start_sec > EARLY_THRESHOLD_SEC:
+            # Earliest detected music significantly sooner — trust it
+            return earliest
+
+    # All detections start around the same time — pick highest confidence
+    return max(viable, key=lambda r: r.confidence)
