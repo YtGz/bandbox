@@ -46,4 +46,56 @@ http.route({
   })
 });
 
+/** POST /worker/storeMatch — store a riff match result. */
+http.route({
+  path: '/worker/storeMatch',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const body = await request.json();
+    await ctx.runMutation(api.riffs.storeMatch, body);
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/getAllRiffs — fetch all riffs for matching. */
+http.route({
+  path: '/worker/getAllRiffs',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const riffs = await ctx.runQuery(api.riffs.listAll);
+    return new Response(JSON.stringify({ riffs }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/getRiffsForRecording — fetch riffs for one recording. */
+http.route({
+  path: '/worker/getRiffsForRecording',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { recordingId } = await request.json();
+    const riffs = await ctx.runQuery(api.riffs.listByRecording, {
+      recordingId
+    });
+    return new Response(JSON.stringify({ riffs }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
 export default http;

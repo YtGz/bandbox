@@ -10,6 +10,8 @@ from .convex_client import ConvexWorkerClient
 from .normalize import normalize
 from .trim import detect_boundaries
 from .encode import split_and_encode
+from .analyze import segment_riffs, extract_fingerprint, extract_contour
+from .match import find_matches
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,11 +77,55 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
         **segment_paths,
     )
 
-    # Step 4: Analysis placeholder
-    # Feature extraction, riff fingerprinting, etc. will be added in Phase 7.
-    # For now, mark as ungrouped.
-    log.info("[%s] Analysis complete (stub), marking as ungrouped", recording_id)
-    client.update_state(recording_id, "ungrouped")
+    # Step 4: Riff segmentation and feature extraction
+    log.info("[%s] Segmenting riffs...", recording_id)
+    riff_segments = segment_riffs(
+        flac_path, trim_result.start_sec, trim_result.end_sec
+    )
+    log.info("[%s] Found %d riff segments", recording_id, len(riff_segments))
+
+    riff_data = []
+    for i, seg in enumerate(riff_segments):
+        log.info(
+            "[%s] Extracting features for riff %d (%.1fs–%.1fs)",
+            recording_id,
+            i,
+            seg["startSec"],
+            seg["endSec"],
+        )
+        fingerprint = extract_fingerprint(
+            flac_path,
+            trim_result.start_sec,
+            seg["startSec"],
+            seg["endSec"],
+        )
+        contour = extract_contour(
+            flac_path,
+            trim_result.start_sec,
+            seg["startSec"],
+            seg["endSec"],
+        )
+
+        riff_data.append(
+            {
+                "riffIndex": i,
+                "startSec": seg["startSec"],
+                "endSec": seg["endSec"],
+                "tempo": fingerprint.get("tempo"),
+                "fingerprint": fingerprint,
+                "contour": contour,
+            }
+        )
+
+    # Store riffs in Convex
+    log.info("[%s] Storing %d riffs in Convex", recording_id, len(riff_data))
+    client.store_riffs(recording_id, riff_data)
+
+    # Extract overall tempo from riffs
+    tempos = [r["fingerprint"]["tempo"] for r in riff_data if r["fingerprint"].get("tempo")]
+    overall_tempo = round(sum(tempos) / len(tempos), 1) if tempos else None
+
+    client.update_state(recording_id, "ungrouped", tempo=overall_tempo)
 
     # Step 5: Clean up original WAV
     try:
@@ -89,6 +135,57 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
         log.warning("[%s] Could not delete source WAV: %s", recording_id, wav_path)
 
     log.info("[%s] ✓ Processing complete", recording_id)
+
+
+def run_batch_matching(processed_ids: list[str], client: ConvexWorkerClient) -> None:
+    """After a batch of recordings are analyzed, run riff matching.
+
+    Compares riffs from newly processed recordings against all existing riffs.
+    Stores match results in Convex for the LLM grouping step (Phase 8).
+    """
+    log.info("Running batch matching for %d recordings", len(processed_ids))
+
+    # Fetch all riffs
+    all_riffs = client.get_all_riffs()
+    log.info("Total riffs in database: %d", len(all_riffs))
+
+    if len(all_riffs) < 2:
+        log.info("Not enough riffs to match, skipping")
+        return
+
+    # Split into new (from this batch) and existing
+    new_riffs = [r for r in all_riffs if r.get("recordingId") in processed_ids]
+    existing_riffs = [r for r in all_riffs if r.get("recordingId") not in processed_ids]
+
+    # Also compare new riffs against each other (within the batch)
+    # by including them in both lists
+    all_for_matching = all_riffs
+
+    log.info(
+        "Matching %d new riffs against %d total riffs",
+        len(new_riffs),
+        len(all_for_matching),
+    )
+
+    matches = find_matches(new_riffs, all_for_matching)
+    log.info("Found %d matches above threshold", len(matches))
+
+    for match in matches:
+        try:
+            client.store_match(
+                match["riffAId"],
+                match["riffBId"],
+                match["score"],
+                match["breakdown"],
+            )
+        except Exception:
+            log.exception(
+                "Failed to store match %s <-> %s",
+                match["riffAId"],
+                match["riffBId"],
+            )
+
+    log.info("Batch matching complete")
 
 
 def run() -> None:
@@ -109,6 +206,8 @@ def run() -> None:
         # Scan for manifest files
         manifest_files = sorted(Path(manifests_dir).glob("*.json"))
 
+        processed_ids: list[str] = []
+
         for manifest_path in manifest_files:
             try:
                 with open(manifest_path) as f:
@@ -116,6 +215,7 @@ def run() -> None:
 
                 log.info("Processing: %s", manifest.get("filename", manifest_path.name))
                 process_recording(manifest, client)
+                processed_ids.append(manifest["recordingId"])
 
                 # Delete manifest after successful processing
                 manifest_path.unlink()
@@ -126,6 +226,13 @@ def run() -> None:
                 failed_dir = Path(manifests_dir) / "failed"
                 failed_dir.mkdir(exist_ok=True)
                 manifest_path.rename(failed_dir / manifest_path.name)
+
+        # After processing a batch, run riff matching
+        if processed_ids:
+            try:
+                run_batch_matching(processed_ids, client)
+            except Exception:
+                log.exception("Error during batch matching")
 
         time.sleep(POLL_INTERVAL)
 

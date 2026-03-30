@@ -1,6 +1,15 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 
+/** Get all riffs across all recordings. Used by the worker for batch matching. */
+export const listAll = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    return await ctx.db.query('riffs').collect();
+  }
+});
+
 /** Get all riffs for a recording. */
 export const listByRecording = query({
   args: { recordingId: v.id('recordings') },

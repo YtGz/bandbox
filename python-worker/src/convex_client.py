@@ -40,3 +40,39 @@ class ConvexWorkerClient:
             headers=self._headers(),
         )
         resp.raise_for_status()
+
+    def store_match(
+        self, riff_a_id: str, riff_b_id: str, score: float, breakdown: dict
+    ) -> None:
+        """Store a riff match result."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/storeMatch",
+            json={
+                "riffAId": riff_a_id,
+                "riffBId": riff_b_id,
+                "score": score,
+                "breakdown": breakdown,
+            },
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+
+    def get_all_riffs(self) -> list[dict]:
+        """Fetch all riffs from Convex."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/getAllRiffs",
+            json={},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["riffs"]
+
+    def get_riffs_for_recording(self, recording_id: str) -> list[dict]:
+        """Fetch riffs for a specific recording."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/getRiffsForRecording",
+            json={"recordingId": recording_id},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["riffs"]
