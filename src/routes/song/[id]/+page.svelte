@@ -52,6 +52,26 @@
     });
   }
 
+  const otherSongsForMove = $derived(
+    otherSongs.map((s) => ({
+      _id: s._id,
+      _creationTime: s._creationTime,
+      title: s.title,
+      notes: s.notes,
+      createdAt: s.createdAt
+    }))
+  );
+
+  async function moveRecording(
+    recordingId: Id<'recordings'>,
+    targetSongId: string
+  ) {
+    await client.mutation(api.recordings.assignToSong, {
+      recordingId,
+      songId: targetSongId as Id<'songs'>
+    });
+  }
+
   async function dissolveSong() {
     if (!song) return;
     if (!confirm('Dissolve this song? All takes will be moved to Unsorted.'))
@@ -157,7 +177,14 @@
       </h2>
       <div class="flex flex-col gap-3">
         {#each song.recordings as recording, i (recording._id)}
-          <RecordingCard {recording} index={i} />
+          <RecordingCard
+            {recording}
+            index={i}
+            showMove={true}
+            songs={otherSongsForMove}
+            onmove={(targetSongId) =>
+              moveRecording(recording._id, targetSongId)}
+          />
         {/each}
       </div>
     </section>

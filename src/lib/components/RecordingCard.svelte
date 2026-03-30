@@ -8,16 +8,20 @@
     recording,
     index,
     showAssign = false,
+    showMove = false,
     songs = [],
     onassign,
-    oncreatesong
+    oncreatesong,
+    onmove
   }: {
     recording: Doc<'recordings'>;
     index?: number;
     showAssign?: boolean;
+    showMove?: boolean;
     songs?: Doc<'songs'>[];
     onassign?: (songId: string) => void;
     oncreatesong?: () => void;
+    onmove?: (songId: string) => void;
   } = $props();
 
   const isProcessing = $derived(
@@ -32,6 +36,10 @@
       : recording.pathFlac
         ? `/api/audio/${recording.pathFlac}`
         : null
+  );
+
+  const flacDownloadUrl = $derived(
+    recording.pathFlac ? `/api/audio/${recording.pathFlac}` : null
   );
 
   function formatDate(ts: number): string {
@@ -67,11 +75,13 @@
       <ProcessingBadge state={recording.state} />
     </div>
 
-    {#if recording.durationSec}
-      <span class="text-xs text-zinc-500">
-        {formatDuration(recording.durationSec)}
-      </span>
-    {/if}
+    <div class="flex items-center gap-2">
+      {#if recording.durationSec}
+        <span class="text-xs text-zinc-500">
+          {formatDuration(recording.durationSec)}
+        </span>
+      {/if}
+    </div>
   </div>
 
   <!-- Metadata row -->
@@ -109,28 +119,61 @@
     <TrimReview {recording} />
   {/if}
 
-  <!-- Assign to song dropdown -->
-  {#if showAssign && !isProcessing}
-    <div class="mt-3 flex items-center gap-2">
-      <select
-        class="rounded-md border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-brand focus:ring-brand"
-        onchange={(e) => {
-          const target = e.currentTarget as HTMLSelectElement;
-          const val = target.value;
-          if (val === '__new__') {
-            oncreatesong?.();
-          } else if (val) {
-            onassign?.(val);
-          }
-          target.value = '';
-        }}
-      >
-        <option value="">Assign to song...</option>
-        {#each songs as song}
-          <option value={song._id}>{song.title}</option>
-        {/each}
-        <option value="__new__">+ Create new song</option>
-      </select>
+  <!-- Actions row -->
+  {#if !isProcessing}
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <!-- Assign to song (unsorted recordings on dashboard) -->
+      {#if showAssign}
+        <select
+          class="rounded-md border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-brand focus:ring-brand"
+          onchange={(e) => {
+            const target = e.currentTarget as HTMLSelectElement;
+            const val = target.value;
+            if (val === '__new__') {
+              oncreatesong?.();
+            } else if (val) {
+              onassign?.(val);
+            }
+            target.value = '';
+          }}
+        >
+          <option value="">Assign to song...</option>
+          {#each songs as song}
+            <option value={song._id}>{song.title}</option>
+          {/each}
+          <option value="__new__">+ Create new song</option>
+        </select>
+      {/if}
+
+      <!-- Move to different song (grouped recordings on song page) -->
+      {#if showMove && songs.length > 0}
+        <select
+          class="rounded-md border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-brand focus:ring-brand"
+          onchange={(e) => {
+            const target = e.currentTarget as HTMLSelectElement;
+            if (target.value) {
+              onmove?.(target.value);
+              target.value = '';
+            }
+          }}
+        >
+          <option value="">Move to...</option>
+          {#each songs as song}
+            <option value={song._id}>{song.title}</option>
+          {/each}
+        </select>
+      {/if}
+
+      <!-- Download FLAC -->
+      {#if flacDownloadUrl}
+        <a
+          href={flacDownloadUrl}
+          download="{recording.filename.replace('.wav', '')}.flac"
+          class="rounded-md px-2.5 py-1.5 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300"
+        >
+          ↓ FLAC
+        </a>
+      {/if}
     </div>
   {/if}
 </div>
