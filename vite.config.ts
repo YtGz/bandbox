@@ -8,6 +8,9 @@ export default defineConfig({
   server: {
     allowedHosts: ['preview.datawarp.dev']
   },
+  optimizeDeps: {
+    exclude: ['convex-svelte']
+  },
   plugins: [
     tailwindcss(),
     sveltekit(),
