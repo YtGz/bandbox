@@ -19,6 +19,19 @@ Turn hours of raw practice recordings into an organized library of songs and tak
 
 All services run as Docker containers on a single-board computer.
 
+## Audio Intelligence
+
+**Riff Segmentation** — agglomerative clustering on chroma features. Finds structural boundaries, merges segments shorter than 3s, splits anything over 60s.
+
+**Fingerprinting** — four features per riff:
+
+- **Groove** (35% weight) — inter-onset interval histogram. Captures the rhythmic pattern regardless of what instruments play it.
+- **Drums** (25%) — low-frequency onset autocorrelation. Isolates kick/snare patterns, which are the most consistent element across takes.
+- **Contour** (25%) — spectral centroid as pitch proxy, because pYIN chokes on heavy distortion. Downsampled to 10pts/sec for efficient DTW.
+- **Spectral contrast** (15%) — tonal character per frequency band. Captures the distortion/tone signature.
+
+**Matching** — brute-force DTW on contours, cosine similarity on everything else. Tempo penalty kicks in when BPM differs >15% (catches the "same riff, different tempo" case without over-penalizing natural drift between takes).
+
 ## Development
 
 ### Prerequisites
