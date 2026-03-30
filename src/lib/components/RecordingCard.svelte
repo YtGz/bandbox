@@ -1,6 +1,7 @@
 <script lang="ts">
   import AudioPlayer from './AudioPlayer.svelte';
   import ProcessingBadge from './ProcessingBadge.svelte';
+  import TrimReview from './TrimReview.svelte';
   import type { Doc } from '$convex/_generated/dataModel';
 
   let {
@@ -101,6 +102,11 @@
     >
       Processing...
     </div>
+  {/if}
+
+  <!-- Trim review -->
+  {#if !isProcessing && recording.state === 'grouped'}
+    <TrimReview {recording} />
   {/if}
 
   <!-- Assign to song dropdown -->
