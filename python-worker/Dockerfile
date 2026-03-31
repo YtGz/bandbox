@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# Install ffmpeg for Opus encoding and system audio libs
+# Install ffmpeg for Opus encoding, system audio libs, and build deps for madmom
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg libsndfile1 && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 \
+        gcc g++ pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 # Install uv

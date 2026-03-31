@@ -245,15 +245,18 @@ def _build_report(
             pair_scores.items(), key=lambda x: -x[1]["score"]
         ):
             bd = match.get("breakdown", {})
+            weight_label = match.get("weights", "balanced")
             lines.append(
                 f"{rec_name.get(rec_a, rec_a)} ↔ {rec_name.get(rec_b, rec_b)}"
+                f"  [weighting: {weight_label}]"
             )
             lines.append(f"  Overall: {match['score']:.3f}")
             lines.append(
                 f"  Groove: {bd.get('groove', 0):.3f}  "
                 f"Drums: {bd.get('drums', 0):.3f}  "
                 f"Contour: {bd.get('contour', 0):.3f}  "
-                f"Spectral: {bd.get('spectral', 0):.3f}"
+                f"Spectral: {bd.get('spectral', 0):.3f}  "
+                f"Tempo: {bd.get('tempo', 0):.3f}"
             )
             lines.append("")
 

@@ -100,11 +100,21 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
             seg["startSec"],
             seg["endSec"],
         )
-        contour = extract_contour(
+        contour_data = extract_contour(
             flac_path,
             trim_result.start_sec,
             seg["startSec"],
             seg["endSec"],
+        )
+
+        log.info(
+            "[%s] Riff %d: tempo=%.1f, uniformity=%.2f, contour=%s (%d pts)",
+            recording_id,
+            i,
+            fingerprint.get("tempo", 0),
+            fingerprint.get("onsetUniformity", 0),
+            contour_data.get("method", "none"),
+            len(contour_data.get("contour", [])),
         )
 
         riff_data.append(
@@ -114,7 +124,7 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
                 "endSec": seg["endSec"],
                 "tempo": fingerprint.get("tempo"),
                 "fingerprint": fingerprint,
-                "contour": contour,
+                "contour": contour_data,
             }
         )
 
