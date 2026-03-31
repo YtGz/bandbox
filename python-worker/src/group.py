@@ -1,7 +1,8 @@
 """LLM-assisted song grouping.
 
-Takes riff match data, transcripts, and metadata, builds a structured
-report, and asks an LLM to group recordings into songs with working titles.
+Takes riff match data, transcripts, transitions, and metadata, builds a
+structured report, and asks an LLM to group recordings into songs with
+working titles.
 """
 
 import json
@@ -14,53 +15,114 @@ log = logging.getLogger("bandbox-worker")
 
 SYSTEM_PROMPT = """\
 You are BandBox, an audio analysis system for a band's practice recordings.
+This band plays black metal and death metal — blast beats, tremolo picking,
+guttural vocals, heavily distorted guitars. Tempos range from doom (~60 BPM)
+to blast sections (180+ BPM). A single song may contain both.
 
-You will receive a similarity report containing:
-- Recording metadata (filename, tempo, key, duration)
-- Pre-song transcripts (what the band said before playing)
-- Riff match scores between recordings (0-1 similarity with feature breakdowns)
+You receive three independent signal types. Triangulate — each compensates
+for the others' weaknesses.
 
-Context: this band plays black metal and death metal. Expect blast beats, tremolo
-picking, guttural vocals, and heavily distorted guitars. Tempos range from slow
-doom passages (~60 BPM) to blast sections (180+ BPM). A single song may contain
-both.
+─── SIGNAL 1: AUDIO SIMILARITY ───────────────────────────────────────────
 
-Your job:
-1. Group recordings that are takes of the SAME SONG based on:
-   - High riff similarity scores (especially groove and contour)
-   - Similar tempo (within ~15% is normal variation between takes)
-   - Similar key
-   - Verbal cues in transcripts ("again", "from the top", "that one", song names)
-2. For each group, suggest a short working title (2-4 words). Priority order:
-   - Use something the band actually said if possible.
-     "let's do that doom one" → "The Doom One"
-     "tremolo part in D" → "D Tremolo"
-     "that blasting thing" → "The Blasting Thing"
-   - If they reference a name, even casually, use it.
-     "okay Gravecrawler from the top" → "Gravecrawler"
-   - If nothing is spoken, describe the vibe using the musical features.
-     Slow + minor key → "Slow Burn", fast blast + tremolo → "Frostbite Riff"
-   - Last resort: use a genre-appropriate placeholder with a number.
-     "Untitled Riff #3", "Blast Passage #1"
-   - Titles should be easy to yell across a practice room. Keep them punchy.
-3. Leave recordings ungrouped if you're not confident they belong together.
-   It's better to leave something ungrouped than to group it incorrectly.
+Riff match scores (0–1) between recording pairs, broken down by feature:
+  • Groove (rhythmic pattern)  — most reliable across takes
+  • Drums (kick/snare pattern) — very consistent, anchors identity
+  • Contour (pitch movement)   — good for melodic riffs, noisy for atonal parts
+  • Spectral (tone/distortion) — least reliable, use as tiebreaker only
 
-Respond with ONLY a JSON object, no markdown, no explanation:
+Interpretation:
+  ≥0.80  — almost certainly the same song
+  0.60–0.79 — likely the same song, look for confirming speech
+  0.40–0.59 — ambiguous, rely on speech and tempo
+  <0.40  — different songs unless speech strongly contradicts
+
+─── SIGNAL 2: SPEECH (per recording) ─────────────────────────────────────
+
+Pre-song speech: what was said before playing. Often contains:
+  • Song names ("Gravecrawler from the top")
+  • References ("that doom one again", "the fast one")
+  • Take numbers ("take 3")
+  • Musical instructions ("drop D, slower this time")
+
+Post-song speech: what was said after playing. Often contains:
+  • Satisfaction cues ("that was the one", "nailed it")
+  • Continuation cues ("one more", "again", "let's do that again")
+  • Transition cues ("okay different song", "now the fast one")
+
+─── SIGNAL 3: TRANSITIONS ────────────────────────────────────────────────
+
+Speech captured between consecutive recordings (end of one → start of next).
+This is the overlap of recording N's post-speech and recording N+1's
+pre-speech, presented as a single passage for context.
+
+Transitions are directional — they refer to what just happened, what's
+about to happen, or both. Examples:
+
+  "that was good, one more"
+   → next recording = same song as previous
+
+  "alright we got it, now the blasting one"
+   → next recording = different song, possibly named "The Blasting One"
+
+  "okay from the top"
+   → next recording = same song (retake from beginning)
+
+  "let's try something new"
+   → next recording = different song
+
+CRITICAL: If the reference direction is unclear, IGNORE the transition.
+Do not let ambiguous transitions override audio similarity evidence.
+When speech and audio conflict, trust audio similarity ≥0.70 over speech.
+
+─── YOUR TASK ────────────────────────────────────────────────────────────
+
+1. GROUP recordings that are takes of the same song. Use all three signals:
+   • Audio similarity is your foundation
+   • Speech confirms, disambiguates, or overrides weak audio matches
+   • Transitions reveal sequence — "one more" = same group continues
+
+2. TITLE each group (2–4 words). In priority order:
+   a) Use the band's own words. They named it? Use that name.
+      "okay Gravecrawler from the top"      → Gravecrawler
+      "let's do that doom one"              → The Doom One
+      "tremolo part in D"                   → D Tremolo
+      "that blasting thing"                 → The Blasting Thing
+   b) If they reference it descriptively, capture the vibe:
+      "the slow heavy one"                  → Slow Heavy One
+   c) If nobody spoke, derive from musical features:
+      Slow + minor key                      → Slow Burn
+      Fast blast + tremolo                  → Frostbite Riff
+      Mid-tempo chug in drop D              → D Chug
+   d) Last resort — genre placeholder with number:
+      Untitled Riff #3, Blast Passage #1
+   Titles must be easy to yell across a practice room. Punchy > clever.
+
+3. LEAVE recordings ungrouped if you're not confident. One wrong group
+   is worse than ten ungrouped recordings. When in doubt, leave it out.
+
+4. NOTES: Write 1–2 sentences explaining your reasoning per group.
+   Mention which signals convinced you (audio match score, speech cue,
+   transition). This helps the band understand and correct mistakes.
+
+─── OUTPUT FORMAT ─────────────────────────────────────────────────────────
+
+Respond with ONLY a JSON object. No markdown fences, no explanation.
 {
   "groups": [
     {
       "title": "Song Title",
-      "notes": "Brief reasoning or musical description",
-      "recordingIds": ["id1", "id2", ...],
-      "existingSongId": "optional — if assigning to an existing song, put its Song ID here"
+      "notes": "Reasoning: which signals led to this grouping",
+      "recordingIds": ["id1", "id2"],
+      "existingSongId": "optional — only if assigning to an existing song"
     }
   ],
-  "ungrouped": ["id3", "id4", ...]
+  "ungrouped": ["id3", "id4"]
 }
 
-If assigning to an existing song, use its title and include existingSongId.
-Only include recording IDs from the RECORDINGS section — never include Song IDs in recordingIds.
+Rules:
+• recordingIds must only contain IDs from the RECORDINGS section
+• To assign to an existing song, include its existingSongId
+• Do not fabricate IDs — use only what appears in the report
 """
 
 
@@ -69,60 +131,106 @@ def _build_report(
     riff_matches: list[dict],
     riffs_by_recording: dict[str, list[dict]],
 ) -> str:
-    """Build a structured similarity report for the LLM."""
+    """Build a structured report with recordings, transitions, and matches."""
     lines: list[str] = []
 
-    lines.append("=== RECORDINGS ===\n")
+    # ── Recordings ──────────────────────────────────────────
+
+    lines.append("=== RECORDINGS ===")
+    lines.append("(Ordered chronologically by upload time)\n")
+
     for rec in recordings:
         lines.append(f"ID: {rec['_id']}")
         lines.append(f"  Filename: {rec.get('filename', 'unknown')}")
         lines.append(f"  Tempo: {rec.get('tempo', 'unknown')} BPM")
         lines.append(f"  Key: {rec.get('dominantKey', 'unknown')}")
         lines.append(f"  Duration: {rec.get('durationSec', 'unknown')}s")
-        if rec.get("transcriptPre"):
-            lines.append(f'  Transcript (before): "{rec["transcriptPre"]}"')
-        if rec.get("transcriptPost"):
-            lines.append(f'  Transcript (after): "{rec["transcriptPost"]}"')
         lines.append(f"  Riffs: {len(riffs_by_recording.get(rec['_id'], []))}")
+
+        if rec.get("transcriptPre"):
+            lines.append(f'  Speech before: "{rec["transcriptPre"]}"')
+        if rec.get("transcriptPost"):
+            lines.append(f'  Speech after: "{rec["transcriptPost"]}"')
+
         lines.append("")
 
-    # Build best match per recording pair
+    # ── Transitions ─────────────────────────────────────────
+    # Build transitions from consecutive recording pairs.
+    # A transition combines recording N's post-speech with N+1's pre-speech
+    # into a single contextual passage.
+
+    transitions = []
+    for i in range(len(recordings) - 1):
+        rec_a = recordings[i]
+        rec_b = recordings[i + 1]
+
+        post = rec_a.get("transcriptPost", "").strip()
+        pre = rec_b.get("transcriptPre", "").strip()
+
+        if not post and not pre:
+            continue
+
+        parts = []
+        if post:
+            parts.append(post)
+        if pre:
+            parts.append(pre)
+
+        name_a = rec_a.get("filename", rec_a["_id"])
+        name_b = rec_b.get("filename", rec_b["_id"])
+
+        transitions.append({
+            "id_a": rec_a["_id"],
+            "id_b": rec_b["_id"],
+            "name_a": name_a,
+            "name_b": name_b,
+            "speech": " … ".join(parts),
+        })
+
+    if transitions:
+        lines.append("=== TRANSITIONS ===")
+        lines.append("(Speech between consecutive recordings)\n")
+
+        for t in transitions:
+            lines.append(f'{t["name_a"]} → {t["name_b"]}')
+            lines.append(f'  "{t["speech"]}"')
+            lines.append("")
+
+    # ── Riff matches ────────────────────────────────────────
+    # Best match per recording pair, sorted by score descending.
+
     pair_scores: dict[tuple[str, str], dict] = {}
+
+    # Build a fast riff→recording lookup
+    riff_to_rec: dict[str, str] = {}
+    for rec_id, riffs in riffs_by_recording.items():
+        for riff in riffs:
+            riff_to_rec[riff["_id"]] = rec_id
+
     for match in riff_matches:
-        # Find which recordings these riffs belong to
-        riff_a_rec = None
-        riff_b_rec = None
-        for rec_id, riffs in riffs_by_recording.items():
-            for riff in riffs:
-                if riff["_id"] == match["riffAId"]:
-                    riff_a_rec = rec_id
-                if riff["_id"] == match["riffBId"]:
-                    riff_b_rec = rec_id
+        riff_a_rec = riff_to_rec.get(match["riffAId"])
+        riff_b_rec = riff_to_rec.get(match["riffBId"])
 
         if not riff_a_rec or not riff_b_rec or riff_a_rec == riff_b_rec:
             continue
 
-        # Canonical pair ordering
         pair = (min(riff_a_rec, riff_b_rec), max(riff_a_rec, riff_b_rec))
         if pair not in pair_scores or match["score"] > pair_scores[pair]["score"]:
             pair_scores[pair] = match
 
     if pair_scores:
-        lines.append("=== BEST RIFF MATCHES (per recording pair) ===\n")
+        lines.append("=== AUDIO SIMILARITY ===")
+        lines.append("(Best riff match per recording pair, descending)\n")
+
+        rec_name = {r["_id"]: r.get("filename", r["_id"]) for r in recordings}
+
         for (rec_a, rec_b), match in sorted(
             pair_scores.items(), key=lambda x: -x[1]["score"]
         ):
-            # Find filenames for readability
-            name_a = next(
-                (r.get("filename", rec_a) for r in recordings if r["_id"] == rec_a),
-                rec_a,
-            )
-            name_b = next(
-                (r.get("filename", rec_b) for r in recordings if r["_id"] == rec_b),
-                rec_b,
-            )
             bd = match.get("breakdown", {})
-            lines.append(f"{name_a} <-> {name_b}")
+            lines.append(
+                f"{rec_name.get(rec_a, rec_a)} ↔ {rec_name.get(rec_b, rec_b)}"
+            )
             lines.append(f"  Overall: {match['score']:.3f}")
             lines.append(
                 f"  Groove: {bd.get('groove', 0):.3f}  "
@@ -192,8 +300,10 @@ def group_recordings(
     """Run LLM grouping on ungrouped recordings.
 
     Args:
-        ungrouped_recordings: Recordings in 'ungrouped' state from the current batch.
-        existing_songs: All existing songs (for context — LLM might assign to existing).
+        ungrouped_recordings: Recordings in 'ungrouped' state from the current
+            batch, ordered chronologically by upload time.
+        existing_songs: All existing songs (for context — LLM might assign to
+            existing).
         riff_matches: All riff match results involving the ungrouped recordings.
         riffs_by_recording: Dict mapping recording ID to its riffs.
         convex_client: ConvexWorkerClient instance.
@@ -211,22 +321,23 @@ def group_recordings(
 
     # Add existing songs context
     if existing_songs:
-        song_context = "\n=== EXISTING SONGS ===\n"
+        song_lines = ["\n=== EXISTING SONGS ==="]
+        song_lines.append("(These songs already exist — you may assign new takes to them)\n")
+
         for song in existing_songs:
-            song_context += f"\nSong ID: {song['_id']}"
-            song_context += f"\n  Title: {song['title']}"
+            song_lines.append(f"Song ID: {song['_id']}")
+            song_lines.append(f"  Title: {song['title']}")
             if song.get("notes"):
-                song_context += f"\n  Notes: {song['notes']}"
+                song_lines.append(f"  Notes: {song['notes']}")
             rec_count = len(song.get("recordings", []))
             if rec_count:
-                song_context += f"\n  Existing takes: {rec_count}"
-        song_context += (
-            "\n\nYou may assign recordings to existing songs using their Song ID. "
-            "Put the Song ID (not recording IDs) in an 'existingSongId' field.\n"
-        )
-        report = song_context + "\n" + report
+                song_lines.append(f"  Existing takes: {rec_count}")
+            song_lines.append("")
+
+        report = "\n".join(song_lines) + "\n" + report
 
     log.info("Calling LLM for grouping...")
+    log.debug("Report:\n%s", report)
     result = _call_llm(report)
     log.info("LLM result: %s", json.dumps(result, indent=2))
 
@@ -249,7 +360,6 @@ def group_recordings(
 
         try:
             if existing_song_id:
-                # Assign to existing song
                 log.info(
                     "Assigning %d recordings to existing song '%s'",
                     len(recording_ids),
@@ -258,7 +368,6 @@ def group_recordings(
                 for rec_id in recording_ids:
                     client.assign_to_song(rec_id, existing_song_id)
             else:
-                # Create new song and assign all recordings
                 log.info(
                     "Creating new song '%s' with %d recordings",
                     title,
