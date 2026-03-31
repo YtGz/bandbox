@@ -117,6 +117,7 @@ bunx convex dev
 
 ## Documentation
 
+- [Pi Setup Guide](pi/README.md) — How to set up the Pwnagotchi as a recording uploader
 - [Implementation Guide](docs/IMPLEMENTATION.md) — Full technical spec and architecture details
 
 ## License
