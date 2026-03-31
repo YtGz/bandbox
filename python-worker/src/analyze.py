@@ -1,11 +1,11 @@
 """Riff segmentation and feature extraction for death/black metal.
 
-Segments a recording into riffs using spectral novelty detection,
+Segments a recording into riffs using self-similarity novelty detection,
 then extracts per-riff fingerprints optimized for heavily distorted music:
 
 - HPSS preprocessing to separate guitar from drums
 - Beat-aligned 16-slot onset patterns (groove + drum fingerprints)
-- Spectral centroid contour with pYIN fallback for tremolo riff tracking
+- Three-method contour cascade: spectral centroid → spectral rolloff → pYIN
 - Zero-mean unit-variance normalization (tuning-independent)
 - Fixed-length resampling (tempo-independent, enables DTW)
 - Per-riff onset uniformity score (for adaptive weighting in match.py)
@@ -14,6 +14,7 @@ then extracts per-riff fingerprints optimized for heavily distorted music:
 import numpy as np
 import librosa
 from scipy.ndimage import median_filter, uniform_filter1d
+from scipy.signal import find_peaks
 
 # ════════════════════════════════════════════════════════════
 #  CONSTANTS
@@ -26,6 +27,8 @@ N_FFT = 2048
 # Riff segmentation
 MIN_RIFF_DURATION = 3.0   # seconds — merge segments shorter than this
 MAX_RIFF_DURATION = 60.0  # seconds — split segments longer than this
+NOVELTY_THRESHOLD = 0.3   # minimum novelty peak height (0-1)
+MIN_PEAK_DISTANCE_SEC = 4.0  # minimum seconds between riff boundaries
 
 # Contour extraction
 CONTOUR_FIXED_LENGTH = 200      # resample all contours to this length
@@ -37,7 +40,7 @@ PYIN_CONFIDENCE_THRESHOLD = 0.5 # use pYIN when confidence exceeds this
 SLOTS_PER_BEAT = 16             # subdivisions per beat for groove patterns
 MIN_BEATS_FOR_GROOVE = 4        # need at least this many beats
 
-# Beat tracking — use librosa as default, madmom when available
+# Beat tracking — use madmom when available, librosa as fallback
 try:
     import madmom
     import madmom.features.beats
@@ -91,8 +94,76 @@ def _detect_beats(y: np.ndarray, sr: int) -> np.ndarray:
 
 
 # ════════════════════════════════════════════════════════════
-#  RIFF SEGMENTATION
+#  RIFF SEGMENTATION — SSM + CHECKERBOARD NOVELTY
 # ════════════════════════════════════════════════════════════
+
+
+def _checkerboard_kernel(size: int) -> np.ndarray:
+    """Build a checkerboard kernel for novelty detection.
+
+    The kernel has +1 in the top-left and bottom-right quadrants,
+    and -1 in the off-diagonal quadrants. When convolved along the
+    diagonal of a self-similarity matrix, it fires at structural
+    boundaries — where the music changes character.
+    """
+    kernel = np.ones((size, size))
+    half = size // 2
+    kernel[:half, half:] = -1
+    kernel[half:, :half] = -1
+    return kernel
+
+
+def _compute_novelty_curve(
+    y: np.ndarray, sr: int, hop: int,
+) -> np.ndarray:
+    """Compute a novelty curve from a self-similarity matrix.
+
+    Uses spectral contrast + onset strength as features (more robust
+    than chroma for heavily distorted music). The SSM reveals repeating
+    sections as bright blocks; the checkerboard kernel detects transitions
+    between blocks.
+    """
+    # Feature extraction — spectral contrast captures tonal character,
+    # onset strength captures rhythmic character
+    contrast = librosa.feature.spectral_contrast(
+        y=y, sr=sr, hop_length=hop, n_bands=6,
+    )
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+    onset_2d = onset_env.reshape(1, -1)
+
+    features = np.vstack([contrast, onset_2d])
+
+    # L2-normalize feature vectors
+    norms = np.linalg.norm(features, axis=0, keepdims=True)
+    norms[norms < 1e-10] = 1.0
+    features = features / norms
+
+    # Self-similarity matrix (cosine similarity)
+    ssm = features.T @ features  # (n_frames, n_frames)
+
+    # Checkerboard kernel — size scales with tempo (~1.5 seconds)
+    kernel_size = max(8, min(128, int(1.5 * sr / hop)))
+    # Ensure even size
+    kernel_size = kernel_size + (kernel_size % 2)
+    kernel = _checkerboard_kernel(kernel_size)
+
+    # Convolve kernel along the diagonal
+    half_k = kernel_size // 2
+    n_frames = ssm.shape[0]
+    novelty = np.zeros(n_frames)
+
+    for i in range(half_k, n_frames - half_k):
+        patch = ssm[i - half_k:i + half_k, i - half_k:i + half_k]
+        if patch.shape == kernel.shape:
+            novelty[i] = np.sum(patch * kernel)
+
+    # Rectify and normalize
+    novelty = np.maximum(novelty, 0)
+    peak = novelty.max()
+    if peak > 0:
+        novelty /= peak
+
+    return novelty
 
 
 def segment_riffs(
@@ -100,10 +171,13 @@ def segment_riffs(
     start_sec: float,
     end_sec: float,
 ) -> list[dict]:
-    """Segment the song portion into riffs using spectral novelty detection.
+    """Segment the song portion into riffs using SSM novelty detection.
 
-    Uses agglomerative clustering on chroma features to find structural
-    boundaries. Short segments are merged; long segments are split.
+    Builds a self-similarity matrix from spectral contrast + onset features,
+    runs a checkerboard kernel along the diagonal to detect structural
+    boundaries, and splits at novelty peaks.
+
+    Short segments (<3s) are merged; long segments (>60s) are split.
 
     Returns list of dicts with startSec/endSec relative to the trimmed region.
     """
@@ -118,12 +192,19 @@ def segment_riffs(
     if duration < MIN_RIFF_DURATION:
         return [{"startSec": 0.0, "endSec": duration}]
 
-    # Chroma-based segmentation (works well even for distorted music
-    # because power chord root movement is visible in chroma)
-    chroma = librosa.feature.chroma_cqt(y=y_song, sr=sr, hop_length=HOP_LENGTH)
-    bounds = librosa.segment.agglomerative(chroma, k=None)
+    # Compute novelty curve
+    novelty = _compute_novelty_curve(y_song, sr, HOP_LENGTH)
 
-    bound_times = librosa.frames_to_time(bounds, sr=sr, hop_length=HOP_LENGTH)
+    # Find peaks in novelty = riff boundaries
+    min_distance = int(MIN_PEAK_DISTANCE_SEC * sr / HOP_LENGTH)
+    peaks, _ = find_peaks(
+        novelty,
+        height=NOVELTY_THRESHOLD,
+        distance=min_distance,
+    )
+
+    # Convert to time
+    bound_times = librosa.frames_to_time(peaks, sr=sr, hop_length=HOP_LENGTH)
     bound_times = np.concatenate([[0.0], bound_times, [duration]])
     bound_times = np.unique(np.sort(bound_times))
 
@@ -172,6 +253,8 @@ def _extract_contour_centroid(
     The centroid tracks the "center of mass" of the spectrum. When the
     guitar moves to a higher note, the centroid rises — even through
     heavy distortion. Heavy smoothing removes tremolo ripple.
+
+    This is the most robust method and the primary default.
     """
     centroid = librosa.feature.spectral_centroid(
         y=y_harm, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH,
@@ -180,9 +263,34 @@ def _extract_contour_centroid(
     if len(centroid) == 0:
         return np.array([])
 
-    # Median filter kills outlier spikes, uniform filter smooths the wave
     smoothed = median_filter(centroid, size=CONTOUR_MEDIAN_SIZE)
     smoothed = uniform_filter1d(smoothed, size=CONTOUR_SMOOTH_SIZE)
+
+    return smoothed
+
+
+def _extract_contour_rolloff(
+    y_harm: np.ndarray, sr: int,
+) -> np.ndarray:
+    """Extract pitch contour via spectral rolloff on harmonic layer.
+
+    The rolloff is the frequency below which 50% of spectral energy sits.
+    Less precise than centroid but more resistant to certain distortion
+    artifacts — when distortion generates strong high-frequency content
+    that pulls the centroid up, the rolloff (at 50%) stays anchored to
+    the fundamental region.
+
+    Used as a backup when centroid quality is poor.
+    """
+    rolloff = librosa.feature.spectral_rolloff(
+        y=y_harm, sr=sr, hop_length=HOP_LENGTH, roll_percent=0.5,
+    )[0]
+
+    if len(rolloff) == 0:
+        return np.array([])
+
+    smoothed = median_filter(rolloff, size=CONTOUR_MEDIAN_SIZE)
+    smoothed = uniform_filter1d(rolloff, size=CONTOUR_SMOOTH_SIZE)
 
     return smoothed
 
@@ -192,8 +300,10 @@ def _extract_contour_pyin(
 ) -> tuple[np.ndarray | None, float]:
     """Attempt pitch tracking via pYIN on harmonic layer.
 
-    Returns (contour_or_None, confidence). pYIN works well on cleaner
-    passages and isolated instruments, fails on heavily distorted full-band.
+    Returns (contour_or_None, confidence). pYIN extracts actual fundamental
+    frequencies — the most precise method when it works. Fails on heavily
+    distorted full-band recordings but works well on cleaner passages,
+    isolated instruments, or bass-heavy sections.
     """
     try:
         f0, _, voiced_prob = librosa.pyin(
@@ -224,6 +334,41 @@ def _extract_contour_pyin(
     return smoothed, confidence
 
 
+def _contour_quality(contour: np.ndarray) -> float:
+    """Score a contour's quality — higher means more melodic movement.
+
+    A flat contour (single chugged note) has low quality.
+    A contour with clear directional movement (tremolo melody) has high quality.
+    Used to pick the best contour method.
+    """
+    if len(contour) < 10:
+        return 0.0
+
+    # Normalize to compare fairly
+    std = np.std(contour)
+    if std < 1e-8:
+        return 0.0
+
+    normalized = (contour - np.mean(contour)) / std
+
+    # Quality = how much directional movement exists
+    # High-quality: smooth waves (tremolo melody)
+    # Low-quality: flat line (single note chug) or random noise
+    delta = np.diff(normalized)
+    # Autocorrelation of deltas — smooth waves have high autocorrelation
+    if len(delta) < 20:
+        return float(np.std(normalized))
+
+    autocorr = np.correlate(delta, delta, mode="full")
+    autocorr = autocorr[len(autocorr) // 2:]
+    if autocorr[0] > 0:
+        autocorr = autocorr / autocorr[0]
+
+    # Sum of first few lags — high for smooth contours, low for noise
+    quality = float(np.mean(autocorr[1:min(20, len(autocorr))]))
+    return max(0.0, quality)
+
+
 def extract_contour(
     audio_path: str,
     song_start_sec: float,
@@ -232,12 +377,19 @@ def extract_contour(
 ) -> dict:
     """Extract melodic contour for a riff.
 
-    Uses pYIN when it's confident, falls back to spectral centroid.
+    Three-method cascade on the harmonic layer:
+    1. Spectral centroid (most robust, primary default)
+    2. Spectral rolloff (backup, resistant to certain distortion artifacts)
+    3. pYIN (most precise when it works — used if confidence is high)
+
+    If pYIN is confident, it wins regardless. Otherwise, the better of
+    centroid and rolloff is selected by contour quality score.
+
     Returns a dict with:
     - contour: fixed-length normalized curve (for DTW)
     - intervals: quantized up/down/flat sequence
-    - method: "pyin" or "centroid"
-    - pyinConfidence: how confident pYIN was (useful for debugging)
+    - method: "pyin", "centroid", or "rolloff"
+    - pyinConfidence: how confident pYIN was
     """
     y, sr = librosa.load(audio_path, sr=SR, mono=True)
 
@@ -256,23 +408,39 @@ def extract_contour(
     # HPSS — analyze harmonic layer only
     y_harm, _ = _hpss(y_riff)
 
-    # Try pYIN first (more precise when it works)
+    # ── Method 3: pYIN (most precise when confident) ──
     pyin_contour, pyin_conf = _extract_contour_pyin(y_harm, sr)
 
     if pyin_contour is not None:
         pitch_curve = pyin_contour
         method = "pyin"
     else:
-        pitch_curve = _extract_contour_centroid(y_harm, sr)
-        method = "centroid"
+        # ── Method 1: Spectral centroid (primary default) ──
+        centroid_contour = _extract_contour_centroid(y_harm, sr)
 
-    if len(pitch_curve) == 0:
-        return {
-            "contour": [],
-            "intervals": [],
-            "method": "none",
-            "pyinConfidence": round(pyin_conf, 3),
-        }
+        # ── Method 2: Spectral rolloff (backup) ──
+        rolloff_contour = _extract_contour_rolloff(y_harm, sr)
+
+        # Pick the one with better melodic movement
+        centroid_q = _contour_quality(centroid_contour)
+        rolloff_q = _contour_quality(rolloff_contour)
+
+        if len(centroid_contour) > 0 and centroid_q >= rolloff_q:
+            pitch_curve = centroid_contour
+            method = "centroid"
+        elif len(rolloff_contour) > 0:
+            pitch_curve = rolloff_contour
+            method = "rolloff"
+        elif len(centroid_contour) > 0:
+            pitch_curve = centroid_contour
+            method = "centroid"
+        else:
+            return {
+                "contour": [],
+                "intervals": [],
+                "method": "none",
+                "pyinConfidence": round(pyin_conf, 3),
+            }
 
     # ── Resample to fixed length (tempo-independent) ──
     resampled = np.interp(
@@ -396,7 +564,6 @@ def extract_fingerprint(
     beats = _detect_beats(y_riff, sr)
 
     if len(beats) < MIN_BEATS_FOR_GROOVE:
-        # Not enough beats — fall back to basic features
         return _fallback_fingerprint(y_riff, y_perc, sr)
 
     # ── Full-signal onset pattern → groove ──
@@ -446,7 +613,7 @@ def _fallback_fingerprint(
 ) -> dict:
     """Fallback when beat tracking fails (very short or chaotic riffs).
 
-    Uses IOI histogram (old approach) instead of beat-aligned patterns.
+    Uses IOI histogram (simpler approach) instead of beat-aligned patterns.
     """
     onset_env = librosa.onset.onset_strength(
         y=y_riff, sr=sr, hop_length=HOP_LENGTH,

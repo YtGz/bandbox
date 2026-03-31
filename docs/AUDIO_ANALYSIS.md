@@ -83,13 +83,13 @@ This contour — the shape of the melody over time — is the primary fingerprin
 
 ### How We Extract It
 
-BandBox uses a three-method cascade on the harmonic layer:
+BandBox uses a three-method cascade on the harmonic layer, selecting the best result:
 
-**Method 1: Spectral centroid (most robust).** The spectral centroid is the "center of mass" of the frequency spectrum. When the guitar moves to a higher note, the centroid shifts up — even through heavy distortion, because distortion preserves the *relative* frequency of the fundamental. Heavy smoothing (median filter → uniform filter) removes the tremolo ripple and reveals the underlying wave shape.
+**Method 1: Spectral centroid (most robust, primary default).** The spectral centroid is the "center of mass" of the frequency spectrum. When the guitar moves to a higher note, the centroid shifts up — even through heavy distortion, because distortion preserves the *relative* frequency of the fundamental. Heavy smoothing (median filter → uniform filter) removes the tremolo ripple and reveals the underlying wave shape.
 
-**Method 2: Spectral rolloff (backup).** The frequency below which 50% of spectral energy sits. Less precise than centroid but more resistant to certain types of distortion artifacts.
+**Method 2: Spectral rolloff (backup).** The frequency below which 50% of spectral energy sits. Less precise than centroid in general, but more resistant to certain distortion artifacts — when distortion generates strong high-frequency harmonics that pull the centroid up, the rolloff at 50% stays anchored to the fundamental region. BandBox computes both centroid and rolloff, scores each by the quality of melodic movement (autocorrelation of the contour's derivative), and picks the winner.
 
-**Method 3: pYIN (when it works).** Probabilistic pitch detection that can extract actual fundamental frequencies. Fails on heavily distorted full-band recordings, but works well on cleaner passages, isolated instruments, or bass-heavy sections. BandBox checks pYIN confidence and uses it when it's reliable (~50%+ voiced probability), falling back to spectral centroid otherwise.
+**Method 3: pYIN (most precise, when it works).** Probabilistic pitch detection that can extract actual fundamental frequencies. Fails on heavily distorted full-band recordings, but works well on cleaner passages, isolated instruments, or bass-heavy sections. BandBox checks pYIN confidence and uses it when it's reliable (~50%+ voiced probability). When pYIN is confident, it wins over centroid and rolloff — it's the most accurate pitch representation, just the least robust to distortion.
 
 ### Making It Tuning-Independent
 
@@ -159,11 +159,11 @@ Uniform (blast/tremolo):  [.9 .9 .8 .9 .9 .8 .9 .9]  →  low variance  →  lea
 Sparse (groove/slam):     [1. 0  0  .8 0  0  1. .7 ]  →  high variance →  lean on RHYTHM
 ```
 
-| Riff type | Contour weight | Rhythm weight | Spectral | Tempo |
-| --- | ---: | ---: | ---: | ---: |
-| Blast beat / tremolo | **55%** | 10% | 15% | 20% |
-| Groove / breakdown | 20% | **45%** | 15% | 20% |
-| Mixed / unclear | 35% | 30% | 15% | 20% |
+| Riff type | Contour | Groove | Drums | Spectral | Tempo |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Blast beat / tremolo | **55%** | 10% | 10% | 5% | 20% |
+| Groove / breakdown | 15% | **35%** | **20%** | 10% | 20% |
+| Mixed / unclear | 30% | 25% | 15% | 10% | 20% |
 
 This means BandBox recognizes riffs the same way you do: for blasty parts, it follows the melody; for groovy parts, it follows the rhythm. Automatically, per riff.
 
@@ -171,9 +171,9 @@ This means BandBox recognizes riffs the same way you do: for blasty parts, it fo
 
 ## Step 5: Riff Segmentation — Breaking Songs Into Parts
 
-A song is a sequence of riffs. Before comparing anything, BandBox segments each recording into riff-sized chunks using novelty detection on a self-similarity matrix.
+A song is a sequence of riffs. Before comparing anything, BandBox segments each recording into riff-sized chunks using novelty detection on a self-similarity matrix (SSM).
 
-The self-similarity matrix (SSM) reveals structure visually:
+The process starts by extracting spectral contrast and onset strength for each time frame — a feature combination that captures both tonal character and rhythmic character, which is more robust for distorted music than chroma features alone. These features form a matrix that is compared against itself to produce the SSM, where each cell represents the similarity between two points in time:
 
 ```
 Song structure: A A B B A C A
@@ -190,7 +190,7 @@ SSM:  A  A  B  B  A  C  A
 Novelty peaks at: A→B, B→A, A→C, C→A boundaries
 ```
 
-A checkerboard kernel slides along the diagonal and fires at transitions — where the music changes character. These peaks become riff boundaries. Short segments (<3 seconds) are merged with their neighbors; long segments (>60 seconds) are split.
+Repeating sections appear as bright blocks on the diagonal. A [checkerboard kernel](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C4/C4S2_SSM.html) — a matrix of +1s and -1s in a checkerboard pattern — slides along the diagonal and fires at transitions, producing a novelty curve. Peaks in this curve mark where the music changes character: a riff transition. These peaks become segment boundaries. Short segments (<3 seconds) are merged with their neighbors; long segments (>60 seconds) are split.
 
 This per-riff approach is what enables partial take matching. Recording just one riff from a song? It matches against every occurrence of that riff across every recording in the library.
 
@@ -200,7 +200,7 @@ This per-riff approach is what enables partial take matching. Recording just one
 
 With fingerprints extracted for every riff in every recording, BandBox runs a brute-force comparison: every new riff against every existing riff.
 
-For each pair, the adaptive weighting produces a single similarity score (0–1) with a per-feature breakdown. A tempo penalty kicks in when BPM differs by more than 15% — this catches the "same riff, different tempo" case without over-penalizing the natural drift that happens between takes.
+For each pair, the adaptive weighting produces a single similarity score (0–1) with a per-feature breakdown. Tempo is scored as a full feature (not just a penalty), with a key refinement: **double/half tempo detection**. Beat trackers sometimes lock to half or double the actual tempo (especially common with blast beats where the tracker hears the snare on 2 and 4 as the beat). BandBox checks all three ratios — direct, double, and half — and uses the best match, so a riff tracked at 100 BPM and the same riff tracked at 200 BPM still score high.
 
 ### Subsequence Matching for Partial Takes
 
