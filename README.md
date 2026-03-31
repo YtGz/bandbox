@@ -32,6 +32,55 @@ All services run as Docker containers on a single-board computer.
 
 **Matching** — brute-force DTW on contours, cosine similarity on everything else. Tempo penalty kicks in when BPM differs >15% (catches the "same riff, different tempo" case without over-penalizing natural drift between takes).
 
+## Data Lifecycle
+
+Recordings flow through four stages. Each stage has clear ownership and retention rules.
+
+```
+USB Stick ──copy──▸ Pi Staging ──upload──▸ Server ──process──▸ Convex + Processed Files
+ (keep)           (temporary)           (incoming)            (permanent)
+```
+
+### 1. USB Stick (band's portable archive)
+
+The USB stick is never modified by BandBox. Files are only read and copied off. The band decides when to format or reuse a stick. Re-inserting a previously copied stick is harmless — the server deduplicates by SHA-256 hash, so nothing gets uploaded twice.
+
+**Retention:** Forever. This is the band's responsibility and their only pre-upload backup.
+
+### 2. Pi Staging (`~/staging/`)
+
+The Pi copies new files from the USB stick to a local staging directory. Files wait here until they've been successfully uploaded to the server. Once the server confirms receipt (returns `accepted`), the local copy is deleted to free up space.
+
+**Retention:** Temporary. Deleted automatically after confirmed upload. The Pi can buffer ~29 GB (roughly 140 songs at 200 MB each) while offline.
+
+### 3. Server Incoming (`/data/audio/incoming/`)
+
+The SvelteKit upload endpoint receives WAV files via HTTP, creates a recording document in Convex, and drops a manifest for the Python worker. The original WAV is deleted after processing.
+
+**Retention:** Temporary. Deleted after the Python worker finishes processing.
+
+### 4. Server Processed (`/data/audio/processed/`)
+
+The Python worker produces four files per recording:
+
+| File | Format | Purpose |
+| --- | --- | --- |
+| `{id}.flac` | FLAC | Full normalized lossless master — never deleted |
+| `{id}_song.opus` | Opus 128k | Trimmed song segment for playback |
+| `{id}_pre.opus` | Opus 128k | Pre-song segment (chatter, tuning, count-in) |
+| `{id}_post.opus` | Opus 128k | Post-song segment (chatter, noodling) |
+
+The FLAC is the permanent source of truth. Opus files are derived and can be regenerated from the FLAC at any time. All metadata (trim points, riff fingerprints, song groupings) lives in Convex.
+
+**Retention:** Permanent. The FLAC is never deleted.
+
+### What this means in practice
+
+- **Lost your Pi?** Plug the USB stick into a new one. Everything re-uploads, server skips duplicates.
+- **USB stick died?** No problem if the server already has the files. The FLAC masters are safe.
+- **Server disk full?** The Opus files can be regenerated from FLACs. Only the FLACs are essential.
+- **Want to reprocess?** The FLAC is always there. Re-trim, re-analyze, re-fingerprint at any time.
+
 ## Development
 
 ### Prerequisites
