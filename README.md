@@ -148,6 +148,7 @@ bunx convex dev      # Convex
 
 ## 📖 Documentation
 
+- **[Audio Analysis Deep Dive](docs/AUDIO_ANALYSIS.md)** — How BandBox recognizes riffs through distortion, blast beats, and alternate tunings
 - **[Pi Setup Guide](pi/README.md)** — Pwnagotchi setup, Arch Linux ARM, e-ink display
 - **[Implementation Guide](docs/IMPLEMENTATION.md)** — Full technical spec, schema, audio pipeline details
 
