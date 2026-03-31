@@ -263,34 +263,46 @@ def _build_report(
 def _call_llm(report: str) -> dict:
     """Call the LLM API with the similarity report."""
     api_key = os.environ.get("LLM_API_KEY")
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1")
 
     if not api_key:
         log.warning("LLM_API_KEY not set, skipping LLM grouping")
         return {"groups": [], "ungrouped": []}
 
-    model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+    model = os.environ.get("LLM_MODEL", "claude-opus-4-6")
 
     resp = httpx.post(
-        f"{base_url.rstrip('/')}/chat/completions",
+        f"{base_url.rstrip('/')}/messages",
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         },
         json={
             "model": model,
+            "system": SYSTEM_PROMPT,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": report},
             ],
             "temperature": 0.3,
             "max_tokens": 2000,
         },
-        timeout=60,
+        timeout=120,
     )
     resp.raise_for_status()
 
-    content = resp.json()["choices"][0]["message"]["content"]
+    data = resp.json()
+
+    # Anthropic Messages API returns content as a list of blocks
+    content_blocks = data.get("content", [])
+    content = ""
+    for block in content_blocks:
+        if block.get("type") == "text":
+            content += block.get("text", "")
+
+    if not content:
+        log.error("LLM returned no text content: %s", data)
+        return {"groups": [], "ungrouped": []}
 
     # Strip markdown fences if present
     content = content.strip()
