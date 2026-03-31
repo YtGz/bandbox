@@ -68,25 +68,52 @@ def _hpss(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 # ════════════════════════════════════════════════════════════
 
 
-def _detect_beats(y: np.ndarray, sr: int) -> np.ndarray:
-    """Detect beat positions in seconds.
+def _detect_beats(
+    y: np.ndarray, sr: int, *, audio_path: str | None = None,
+) -> np.ndarray:
+    """Detect beat positions in seconds, relative to the provided audio signal.
 
-    Uses madmom's neural beat tracker when available (robust up to 260 BPM),
-    falls back to librosa's beat tracker.
+    Uses madmom's neural beat tracker when available (robust up to 215 BPM
+    with DBN postprocessing), falls back to librosa's beat tracker.
+
+    Note: madmom requires a file path and processes the entire file. Since we
+    pass it pre-sliced audio segments via librosa anyway, we use librosa's
+    beat tracker for riff-level analysis (which accepts numpy arrays directly).
+    madmom is used as a fallback when librosa struggles, by writing a temporary
+    WAV file.
+
+    Args:
+        y: Audio signal as numpy array (the riff segment).
+        sr: Sample rate.
+        audio_path: Original file path (currently unused — reserved for future
+            whole-file beat tracking cache).
     """
     if HAS_MADMOM:
         try:
-            proc = madmom.features.beats.DBNBeatTrackingProcessor(
-                min_bpm=40, max_bpm=260, fps=100,
-            )
-            act = madmom.features.beats.RNNBeatProcessor()(y)
-            beats = proc(act)
+            import tempfile
+            import soundfile as sf
+
+            # Write riff segment to temp file for madmom
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+                sf.write(tmp_path, y, sr)
+
+            try:
+                proc = madmom.features.beats.DBNBeatTrackingProcessor(
+                    min_bpm=40, max_bpm=260, fps=100,
+                )
+                act = madmom.features.beats.RNNBeatProcessor()(tmp_path)
+                beats = proc(act)
+            finally:
+                import os
+                os.unlink(tmp_path)
+
             if len(beats) >= MIN_BEATS_FOR_GROOVE:
                 return beats
         except Exception:
             pass  # fall through to librosa
 
-    # Librosa fallback
+    # Librosa fallback — works directly on numpy arrays
     tempo, beat_frames = librosa.beat.beat_track(
         y=y, sr=sr, hop_length=HOP_LENGTH,
     )
@@ -587,7 +614,9 @@ def extract_features(
     y_harm, y_perc = _hpss(y_riff)
 
     # Extract fingerprint (uses y_riff, y_harm, y_perc)
-    fingerprint = _extract_fingerprint_from_audio(y_riff, y_harm, y_perc, sr)
+    fingerprint = _extract_fingerprint_from_audio(
+        y_riff, y_harm, y_perc, sr, audio_path=audio_path,
+    )
 
     # Extract contour (reuses y_harm — no redundant load or HPSS)
     contour = extract_contour(
@@ -632,7 +661,9 @@ def extract_fingerprint(
         }
 
     y_harm, y_perc = _hpss(y_riff)
-    return _extract_fingerprint_from_audio(y_riff, y_harm, y_perc, sr)
+    return _extract_fingerprint_from_audio(
+        y_riff, y_harm, y_perc, sr, audio_path=audio_path,
+    )
 
 
 def _extract_fingerprint_from_audio(
@@ -640,11 +671,13 @@ def _extract_fingerprint_from_audio(
     y_harm: np.ndarray,
     y_perc: np.ndarray,
     sr: int,
+    *,
+    audio_path: str | None = None,
 ) -> dict:
     """Core fingerprint extraction from pre-loaded, pre-separated audio."""
 
     # ── Beat tracking ──
-    beats = _detect_beats(y_riff, sr)
+    beats = _detect_beats(y_riff, sr, audio_path=audio_path)
 
     if len(beats) < MIN_BEATS_FOR_GROOVE:
         return _fallback_fingerprint(y_riff, y_perc, sr)

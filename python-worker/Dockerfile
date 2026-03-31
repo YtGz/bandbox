@@ -12,6 +12,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
+# Install build deps for madmom-modern (Cython compiles C extensions)
+RUN pip install --no-cache-dir cython>=3.0
+
 # Install dependencies
 COPY pyproject.toml .
 RUN uv sync --no-dev
