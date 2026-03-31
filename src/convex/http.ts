@@ -176,6 +176,44 @@ http.route({
   })
 });
 
+/** POST /worker/setProcessingFlags — set quality degradation flags on a recording. */
+http.route({
+  path: '/worker/setProcessingFlags',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { recordingId, flags } = await request.json();
+    await ctx.runMutation(api.recordings.setProcessingFlags, {
+      recordingId,
+      flags,
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+});
+
+/** POST /worker/listReprocess — list recordings scheduled for reprocessing. */
+http.route({
+  path: '/worker/listReprocess',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const recordings = await ctx.runQuery(api.recordings.listByState, {
+      state: 'reprocess',
+    });
+    return new Response(JSON.stringify({ recordings }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+});
+
 /** POST /worker/setSystemWarning — create or update a system warning. */
 http.route({
   path: '/worker/setSystemWarning',

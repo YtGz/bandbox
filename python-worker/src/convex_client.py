@@ -118,6 +118,27 @@ class ConvexWorkerClient:
         )
         resp.raise_for_status()
 
+    def set_processing_flags(
+        self, recording_id: str, flags: list[str],
+    ) -> None:
+        """Set quality degradation flags on a recording."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/setProcessingFlags",
+            json={"recordingId": recording_id, "flags": flags},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+
+    def list_reprocess(self) -> list[dict]:
+        """Fetch recordings scheduled for reprocessing."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/listReprocess",
+            json={},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["recordings"]
+
     def set_system_warning(self, key: str, message: str) -> None:
         """Create or update a system warning shown in the frontend."""
         resp = self._client.post(

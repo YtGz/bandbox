@@ -10,7 +10,7 @@ from .convex_client import ConvexWorkerClient
 from .normalize import normalize
 from .trim import detect_boundaries
 from .encode import split_and_encode
-from .analyze import segment_riffs, extract_features
+from .analyze import segment_riffs, extract_features, HAS_MADMOM
 from .match import find_matches
 from .group import group_recordings
 
@@ -86,6 +86,12 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
     log.info("[%s] Found %d riff segments", recording_id, len(riff_segments))
 
     riff_data = []
+    processing_flags: set[str] = set()
+
+    # Track if we're running without madmom
+    if not HAS_MADMOM:
+        processing_flags.add("no_madmom:librosa_beat_tracking")
+
     for i, seg in enumerate(riff_segments):
         log.info(
             "[%s] Extracting features for riff %d (%.1fs–%.1fs)",
@@ -112,6 +118,14 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
             len(contour_data.get("contour", [])),
         )
 
+        # Collect quality degradation flags
+        if fingerprint.pop("_degraded", None):
+            processing_flags.add(f"riff_{i}:fallback_fingerprint")
+        if contour_data.get("method") == "none":
+            processing_flags.add(f"riff_{i}:no_contour")
+        if not fingerprint.get("groove"):
+            processing_flags.add(f"riff_{i}:empty_groove")
+
         riff_data.append(
             {
                 "riffIndex": i,
@@ -132,6 +146,17 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
     overall_tempo = round(sum(tempos) / len(tempos), 1) if tempos else None
 
     client.update_state(recording_id, "ungrouped", tempo=overall_tempo)
+
+    # Store processing flags if any degradation occurred
+    if processing_flags:
+        flags_list = sorted(processing_flags)
+        log.warning(
+            "[%s] Processing flags: %s", recording_id, ", ".join(flags_list),
+        )
+        try:
+            client.set_processing_flags(recording_id, flags_list)
+        except Exception:
+            log.exception("[%s] Failed to store processing flags", recording_id)
 
     # Step 5: Clean up original WAV
     try:
@@ -258,7 +283,6 @@ def run() -> None:
     client = ConvexWorkerClient()
 
     # Check beat tracker availability and notify frontend
-    from .analyze import HAS_MADMOM
     if not HAS_MADMOM:
         log.warning("⚠️  madmom-modern not available — beat tracking quality degraded")
         try:
@@ -299,6 +323,98 @@ def run() -> None:
                 failed_dir = Path(manifests_dir) / "failed"
                 failed_dir.mkdir(exist_ok=True)
                 manifest_path.rename(failed_dir / manifest_path.name)
+
+        # Check for recordings scheduled for reprocessing
+        if not manifest_files:
+            try:
+                reprocess_list = client.list_reprocess()
+                for rec in reprocess_list:
+                    rec_id = rec["_id"]
+                    flac_path_rel = rec.get("pathFlac")
+                    if not flac_path_rel:
+                        log.warning("[%s] No FLAC path, skipping reprocess", rec_id)
+                        continue
+
+                    flac_path = os.path.join(audio_base, "processed", flac_path_rel)
+                    if not os.path.exists(flac_path):
+                        log.error("[%s] FLAC not found: %s", rec_id, flac_path)
+                        continue
+
+                    log.info("[%s] Reprocessing from FLAC...", rec_id)
+
+                    # Re-run analysis pipeline from the existing FLAC
+                    # (skip normalize — FLAC is already normalized)
+                    client.update_state(rec_id, "trimming")
+                    trim_result = detect_boundaries(flac_path)
+                    segment_paths = split_and_encode(
+                        flac_path,
+                        os.path.join(audio_base, "processed"),
+                        rec_id,
+                        trim_result.start_sec,
+                        trim_result.end_sec,
+                    )
+                    client.update_state(
+                        rec_id, "analyzing",
+                        cutStartSec=trim_result.start_sec,
+                        cutEndSec=trim_result.end_sec,
+                        trimConfidence=trim_result.confidence,
+                        trimMethod=trim_result.method,
+                        durationSec=trim_result.end_sec - trim_result.start_sec,
+                        **segment_paths,
+                    )
+
+                    riff_segments = segment_riffs(
+                        flac_path, trim_result.start_sec, trim_result.end_sec,
+                    )
+
+                    riff_data = []
+                    reprocess_flags: set[str] = set()
+                    if not HAS_MADMOM:
+                        reprocess_flags.add("no_madmom:librosa_beat_tracking")
+
+                    for i, seg in enumerate(riff_segments):
+                        fingerprint, contour_data = extract_features(
+                            flac_path,
+                            trim_result.start_sec,
+                            seg["startSec"],
+                            seg["endSec"],
+                        )
+                        if fingerprint.pop("_degraded", None):
+                            reprocess_flags.add(f"riff_{i}:fallback_fingerprint")
+                        if contour_data.get("method") == "none":
+                            reprocess_flags.add(f"riff_{i}:no_contour")
+
+                        riff_data.append({
+                            "riffIndex": i,
+                            "startSec": seg["startSec"],
+                            "endSec": seg["endSec"],
+                            "tempo": fingerprint.get("tempo"),
+                            "fingerprint": fingerprint,
+                            "contour": contour_data,
+                        })
+
+                    client.store_riffs(rec_id, riff_data)
+                    tempos = [
+                        r["fingerprint"]["tempo"]
+                        for r in riff_data
+                        if r["fingerprint"].get("tempo")
+                    ]
+                    overall_tempo = (
+                        round(sum(tempos) / len(tempos), 1) if tempos else None
+                    )
+                    client.update_state(rec_id, "ungrouped", tempo=overall_tempo)
+
+                    if reprocess_flags:
+                        client.set_processing_flags(rec_id, sorted(reprocess_flags))
+                    else:
+                        # Clear old flags — reprocessing fixed the issues
+                        client.set_processing_flags(rec_id, [])
+
+                    processed_ids.append(rec_id)
+                    log.info("[%s] ✓ Reprocessing complete", rec_id)
+
+            except Exception:
+                log.exception("Error checking reprocess queue")
 
         # After processing a batch, run riff matching
         if processed_ids:

@@ -701,7 +701,9 @@ def _extract_fingerprint_from_audio(
     beats = _detect_beats(y_riff, sr, audio_path=audio_path)
 
     if len(beats) < MIN_BEATS_FOR_GROOVE:
-        return _fallback_fingerprint(y_riff, y_perc, sr)
+        fp = _fallback_fingerprint(y_riff, y_perc, sr)
+        fp["_degraded"] = "fallback_fingerprint"
+        return fp
 
     # ── Full-signal onset pattern → groove ──
     onset_env = librosa.onset.onset_strength(

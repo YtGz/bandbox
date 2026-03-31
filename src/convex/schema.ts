@@ -18,7 +18,8 @@ export default defineSchema({
       v.literal('trimming'),
       v.literal('analyzing'),
       v.literal('grouped'),
-      v.literal('ungrouped')
+      v.literal('ungrouped'),
+      v.literal('reprocess')
     ),
     songId: v.optional(v.id('songs')),
     pathFlac: v.optional(v.string()),
@@ -35,7 +36,8 @@ export default defineSchema({
     transcriptPost: v.optional(v.string()),
     tempo: v.optional(v.number()),
     dominantKey: v.optional(v.string()),
-    durationSec: v.optional(v.number())
+    durationSec: v.optional(v.number()),
+    processingFlags: v.optional(v.array(v.string()))
   })
     .index('by_hash', ['fileHash'])
     .index('by_state', ['state'])

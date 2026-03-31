@@ -23,6 +23,28 @@ export const listUngrouped = query({
   }
 });
 
+/** List recordings by state. */
+export const listByState = query({
+  args: {
+    state: v.union(
+      v.literal('uploading'),
+      v.literal('normalizing'),
+      v.literal('trimming'),
+      v.literal('analyzing'),
+      v.literal('grouped'),
+      v.literal('ungrouped'),
+      v.literal('reprocess')
+    )
+  },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('recordings')
+      .withIndex('by_state', (q) => q.eq('state', args.state))
+      .collect();
+  }
+});
+
 /** List all recordings currently being processed. */
 export const listProcessing = query({
   args: {},
@@ -82,7 +104,8 @@ export const updateState = mutation({
       v.literal('trimming'),
       v.literal('analyzing'),
       v.literal('grouped'),
-      v.literal('ungrouped')
+      v.literal('ungrouped'),
+      v.literal('reprocess')
     ),
     pathFlac: v.optional(v.string()),
     pathSong: v.optional(v.string()),
@@ -183,5 +206,89 @@ export const restoreTrim = mutation({
       savedCutEndSec: undefined
     });
     return null;
+  }
+});
+
+/** Schedule a single recording for reprocessing. */
+export const scheduleReprocess = mutation({
+  args: { recordingId: v.id('recordings') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const recording = await ctx.db.get(args.recordingId);
+    if (!recording) throw new Error('Recording not found');
+    if (!recording.pathFlac) throw new Error('No FLAC file — cannot reprocess');
+
+    // Delete existing riffs for this recording (will be re-extracted)
+    const riffs = await ctx.db
+      .query('riffs')
+      .withIndex('by_recording', (q) => q.eq('recordingId', args.recordingId))
+      .collect();
+    for (const riff of riffs) {
+      await ctx.db.delete(riff._id);
+    }
+
+    await ctx.db.patch(args.recordingId, { state: 'reprocess' });
+    return null;
+  }
+});
+
+/** Schedule all recordings with processing flags for reprocessing. */
+export const scheduleReprocessFlagged = mutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const all = await ctx.db.query('recordings').collect();
+    let count = 0;
+    for (const rec of all) {
+      if (
+        rec.processingFlags &&
+        Array.isArray(rec.processingFlags) &&
+        rec.processingFlags.length > 0 &&
+        rec.pathFlac
+      ) {
+        // Delete existing riffs
+        const riffs = await ctx.db
+          .query('riffs')
+          .withIndex('by_recording', (q) => q.eq('recordingId', rec._id))
+          .collect();
+        for (const riff of riffs) {
+          await ctx.db.delete(riff._id);
+        }
+
+        await ctx.db.patch(rec._id, { state: 'reprocess' });
+        count++;
+      }
+    }
+    return count;
+  }
+});
+
+/** Set processing quality flags on a recording. */
+export const setProcessingFlags = mutation({
+  args: {
+    recordingId: v.id('recordings'),
+    flags: v.array(v.string())
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.recordingId, {
+      processingFlags: args.flags
+    });
+    return null;
+  }
+});
+
+/** List recordings with processing quality flags. */
+export const listFlagged = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    const all = await ctx.db.query('recordings').collect();
+    return all.filter(
+      (r) =>
+        r.processingFlags &&
+        Array.isArray(r.processingFlags) &&
+        r.processingFlags.length > 0
+    );
   }
 });
