@@ -20,16 +20,29 @@ You will receive a similarity report containing:
 - Pre-song transcripts (what the band said before playing)
 - Riff match scores between recordings (0-1 similarity with feature breakdowns)
 
+Context: this band plays black metal and death metal. Expect blast beats, tremolo
+picking, guttural vocals, and heavily distorted guitars. Tempos range from slow
+doom passages (~60 BPM) to blast sections (180+ BPM). A single song may contain
+both.
+
 Your job:
 1. Group recordings that are takes of the SAME SONG based on:
    - High riff similarity scores (especially groove and contour)
    - Similar tempo (within ~15% is normal variation between takes)
    - Similar key
    - Verbal cues in transcripts ("again", "from the top", "that one", song names)
-2. For each group, suggest a working title based on:
-   - Any song names mentioned in transcripts
-   - Musical characteristics (tempo, key, mood implied by features)
-   - If nothing obvious, use a descriptive placeholder
+2. For each group, suggest a short working title (2-4 words). Priority order:
+   - Use something the band actually said if possible.
+     "let's do that doom one" → "The Doom One"
+     "tremolo part in D" → "D Tremolo"
+     "that blasting thing" → "The Blasting Thing"
+   - If they reference a name, even casually, use it.
+     "okay Gravecrawler from the top" → "Gravecrawler"
+   - If nothing is spoken, describe the vibe using the musical features.
+     Slow + minor key → "Slow Burn", fast blast + tremolo → "Frostbite Riff"
+   - Last resort: use a genre-appropriate placeholder with a number.
+     "Untitled Riff #3", "Blast Passage #1"
+   - Titles should be easy to yell across a practice room. Keep them punchy.
 3. Leave recordings ungrouped if you're not confident they belong together.
    It's better to leave something ungrouped than to group it incorrectly.
 
