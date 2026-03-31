@@ -65,5 +65,12 @@ export default defineSchema({
     fromSongId: v.optional(v.id('songs')),
     toSongId: v.id('songs'),
     correctedAt: v.number()
-  }).index('by_recording', ['recordingId'])
+  }).index('by_recording', ['recordingId']),
+
+  systemWarnings: defineTable({
+    key: v.string(),
+    message: v.string(),
+    createdAt: v.number(),
+    dismissed: v.boolean()
+  }).index('by_key', ['key'])
 });

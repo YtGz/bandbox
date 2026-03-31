@@ -176,4 +176,36 @@ http.route({
   })
 });
 
+/** POST /worker/setSystemWarning — create or update a system warning. */
+http.route({
+  path: '/worker/setSystemWarning',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { key, message } = await request.json();
+    // Upsert: find existing warning by key, update or create
+    const existing = await ctx.runQuery(
+      api.systemWarnings.getByKey,
+      { key }
+    );
+    if (existing) {
+      await ctx.runMutation(api.systemWarnings.update, {
+        id: existing._id,
+        message,
+      });
+    } else {
+      await ctx.runMutation(api.systemWarnings.create, {
+        key,
+        message,
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  })
+});
+
 export default http;

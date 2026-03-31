@@ -117,3 +117,12 @@ class ConvexWorkerClient:
             headers=self._headers(),
         )
         resp.raise_for_status()
+
+    def set_system_warning(self, key: str, message: str) -> None:
+        """Create or update a system warning shown in the frontend."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/setSystemWarning",
+            json={"key": key, "message": message},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()

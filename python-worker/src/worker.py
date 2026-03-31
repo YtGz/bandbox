@@ -153,7 +153,34 @@ def run_batch_matching(processed_ids: list[str], client: ConvexWorkerClient) -> 
 
     # Fetch all riffs
     all_riffs = client.get_all_riffs()
-    log.info("Total riffs in database: %d", len(all_riffs))
+    total_riffs = len(all_riffs)
+    log.info("Total riffs in database: %d", total_riffs)
+
+    # Performance scaling warnings
+    if total_riffs > 1000:
+        log.warning(
+            "⚠️  PERFORMANCE: %d riffs in library. Brute-force matching is O(n²) "
+            "and will be slow. Consider implementing approximate nearest neighbor "
+            "indexing (faiss/annoy) for the contour vectors. "
+            "See: https://github.com/facebookresearch/faiss",
+            total_riffs,
+        )
+        # Notify via Convex so the frontend can show a banner
+        try:
+            client.set_system_warning(
+                "matching_performance",
+                f"Riff library has grown to {total_riffs} riffs. "
+                f"Matching is getting slow — time to implement vector indexing. "
+                f"See AUDIO_ANALYSIS.md § Future.",
+            )
+        except Exception:
+            pass  # non-critical, don't break matching
+    elif total_riffs > 500:
+        log.info(
+            "📊 Riff library at %d — matching still fast, but approaching the "
+            "threshold (~1000) where vector indexing would help.",
+            total_riffs,
+        )
 
     if len(all_riffs) < 2:
         log.info("Not enough riffs to match, skipping")
