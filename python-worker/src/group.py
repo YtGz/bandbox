@@ -98,10 +98,16 @@ When speech and audio conflict, trust high audio similarity over speech.
       Untitled Riff #3, Blast Passage #1
    Titles must be easy to yell across a practice room. Punchy > clever.
 
-3. LEAVE recordings ungrouped if you're not confident. One wrong group
-   is worse than ten ungrouped recordings. When in doubt, leave it out.
+3. SINGLE RECORDINGS: If a recording has no strong match to anything else,
+   it's probably a new song with only one take so far. Create a group of one
+   and title it from speech or musical features. Only leave a recording
+   ungrouped if you truly cannot determine anything about it.
 
-4. NOTES: Write 1–2 sentences explaining your reasoning per group.
+4. LEAVE recordings ungrouped if you're not confident about a MULTI-RECORDING
+   group. One wrong group is worse than ten ungrouped recordings. But don't
+   leave a clearly distinct song ungrouped just because it has no siblings.
+
+5. NOTES: Write 1–2 sentences explaining your reasoning per group.
    Mention which signals convinced you (audio match score, speech cue,
    transition). This helps the band understand and correct mistakes.
 
