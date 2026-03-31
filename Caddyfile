@@ -1,0 +1,31 @@
+{$DOMAIN} {
+    # ── Pi upload — API key auth, bypass oauth2-proxy ──
+    handle /api/upload {
+        reverse_proxy sveltekit:3000
+    }
+
+    # ── Pocket-ID — OIDC provider ──
+    handle /pocket-id/* {
+        reverse_proxy pocket-id:8080
+    }
+
+    # ── oauth2-proxy callback ──
+    handle /oauth2/* {
+        reverse_proxy oauth2-proxy:4180
+    }
+
+    # ── Everything else — through oauth2-proxy ──
+    handle {
+        # Forward auth: oauth2-proxy validates the session cookie.
+        # If not authenticated, user is redirected to Pocket-ID login.
+        forward_auth oauth2-proxy:4180 {
+            uri /oauth2/auth
+            header_up X-Forwarded-Proto {scheme}
+
+            # Copy auth headers to upstream (optional, for user info)
+            copy_headers X-Auth-Request-User X-Auth-Request-Email
+        }
+
+        reverse_proxy sveltekit:3000
+    }
+}

@@ -14,10 +14,11 @@ Turn hours of raw practice recordings into an organized library of songs and tak
 - **SvelteKit** — Frontend and upload API, running on Bun
 - **Convex** — Realtime cloud database with reactive subscriptions
 - **Python Worker** — Audio processing pipeline (normalize, trim, encode, fingerprint)
-- **Pocket-ID** — Self-hosted OIDC authentication with passkeys
+- **Pocket-ID** — Self-hosted OIDC provider with passkey/WebAuthn authentication
+- **oauth2-proxy** — Authentication gate in front of SvelteKit (no auth code in the app)
 - **Caddy** — Reverse proxy with automatic HTTPS
 
-All services run as Docker containers on a single-board computer.
+All services run as Docker containers on a single-board computer. The Pi upload endpoint (`/api/upload`) uses API key auth and bypasses oauth2-proxy.
 
 ## Audio Intelligence
 

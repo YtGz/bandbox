@@ -94,27 +94,34 @@ Used as training signal for the future custom ML model. Index: `by_recording`.
 
 ## 3. Authentication
 
+Authentication uses [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) in front of SvelteKit, with [Pocket-ID](https://github.com/stonith404/pocket-id) as the OIDC provider. This keeps all auth logic out of the application — SvelteKit serves pages, oauth2-proxy decides who gets in.
+
+### Why oauth2-proxy?
+
+BandBox doesn't need per-user features. Every band member sees the same dashboard, edits the same songs, reviews the same recordings. The only question is: "Are you in the band?" Pocket-ID controls who can register a passkey. oauth2-proxy enforces the login gate. SvelteKit stays auth-free.
+
+### How It Works
+
+1. Caddy receives all requests and routes them through `forward_auth` to oauth2-proxy
+2. oauth2-proxy checks for a valid session cookie
+3. If missing or expired, the user is redirected to Pocket-ID's passkey login
+4. After authentication, oauth2-proxy sets a secure cookie (30-day expiry) and passes the request through
+5. SvelteKit never sees unauthenticated requests (except `/api/upload`)
+
 ### Pocket-ID Setup
 
 Pocket-ID runs as a Docker container and provides a WebAuthn/passkey-based login flow over OIDC. Each band member registers a passkey on their phone or laptop. No passwords.
 
-Caddy routes `/pocket-id/*` to the Pocket-ID container.
-
-### SvelteKit Integration
-
-- A server hook intercepts every request and checks for a valid session cookie.
-- Unauthenticated users are redirected to `/login`, which initiates the OIDC flow with Pocket-ID.
-- After successful passkey authentication, Pocket-ID redirects to `/callback` with an authorization code.
-- The callback endpoint exchanges the code for tokens, creates a signed session cookie (HttpOnly, Secure, SameSite=Lax, 30-day expiry), and redirects to the dashboard.
-- The Pi's upload endpoint uses a static API key in the `X-Api-Key` header instead of session auth.
+Caddy routes `/pocket-id/*` to the Pocket-ID container. After first boot, create an OIDC client in the Pocket-ID admin UI and copy the client ID and secret into the `.env` file.
 
 ### Protected Routes
 
-| Path                  | Auth method                     |
-| --------------------- | ------------------------------- |
-| `/api/upload`         | API key (Pi)                    |
-| `/login`, `/callback` | Public                          |
-| Everything else       | Session cookie (Pocket-ID OIDC) |
+| Path | Auth method |
+| --- | --- |
+| `/api/upload` | API key (Pi) — Caddy routes directly to SvelteKit, bypassing oauth2-proxy |
+| `/pocket-id/*` | Public — the OIDC provider itself |
+| `/oauth2/*` | oauth2-proxy endpoints (callback, sign-out) |
+| Everything else | oauth2-proxy → Pocket-ID passkey login |
 
 ---
 
@@ -126,7 +133,6 @@ Caddy routes `/pocket-id/*` to the Pocket-ID container.
 / Dashboard (all songs + unsorted)
 /song/{id} Song detail (all takes)
 /recording/{id} Recording detail (trim review, riff map)
-/login Redirect to Pocket-ID
 /callback OIDC callback handler
 ```
 
@@ -395,36 +401,41 @@ Two HTTP routes authenticated by a worker API key:
 
 ### Docker Compose Services
 
-| Service         | Image/Build                  | Ports           | Volumes               |
-| --------------- | ---------------------------- | --------------- | --------------------- |
-| `caddy`         | `caddy:2-alpine`             | 80, 443         | Caddyfile, caddy_data |
-| `sveltekit`     | Built from `./sveltekit`     | 3000 (internal) | audio_data            |
-| `python-worker` | Built from `./python-worker` | None            | audio_data            |
-| `pocket-id`     | `stonith404/pocket-id`       | 8080 (internal) | pocket_id_data        |
+| Service | Image/Build | Ports | Volumes |
+| --- | --- | --- | --- |
+| `caddy` | `caddy:2-alpine` | 80, 443 | Caddyfile, caddy_data, caddy_config |
+| `sveltekit` | Built from `./` | 3000 (internal) | audio_data |
+| `python-worker` | Built from `./python-worker` | None | audio_data |
+| `pocket-id` | `stonith404/pocket-id` | 8080 (internal) | pocket_id_data |
+| `oauth2-proxy` | `quay.io/oauth2-proxy/oauth2-proxy:v7` | 4180 (internal) | None |
 
 ### Volumes
 
 - `audio_data` — shared between SvelteKit and Python worker. Contains incoming and processed audio files.
 - `caddy_data` — Caddy's TLS certificates and state
+- `caddy_config` — Caddy's runtime configuration
 - `pocket_id_data` — Pocket-ID's database and configuration
 
 ### Environment Variables
 
-Managed via a `.env` file:
+Managed via a `.env` file (see `.env.example`):
 
-- `DOMAIN` — public domain for Caddy
+- `DOMAIN` — public domain for Caddy auto-HTTPS
 - `CONVEX_URL` / `PUBLIC_CONVEX_URL` — Convex deployment URLs
-- `CONVEX_HTTP_URL` — Convex HTTP actions URL (for Python worker)
 - `PI_API_KEY` — shared secret for Pi uploads
-- `WORKER_API_KEY` — shared secret for Python worker to Convex HTTP actions
-- `POCKET_ID_CLIENT_ID` / `POCKET_ID_CLIENT_SECRET` — OIDC credentials
-- `SESSION_SECRET` — signing key for session cookies
+- `WORKER_API_KEY` — shared secret for Python worker → Convex HTTP actions
+- `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` — Pocket-ID OIDC client credentials (for oauth2-proxy)
+- `COOKIE_SECRET` — 32-byte base64 string for oauth2-proxy cookie encryption
 - `LLM_API_KEY` / `LLM_BASE_URL` — for the grouping LLM
 
 ### Caddy Routing
 
-- `/*` → SvelteKit (frontend + API)
-- `/pocket-id/*` → Pocket-ID (strip prefix)
+| Path | Target | Auth |
+| --- | --- | --- |
+| `/api/upload` | SvelteKit (direct) | API key (Pi) |
+| `/pocket-id/*` | Pocket-ID | Public |
+| `/oauth2/*` | oauth2-proxy | Public (handles login flow) |
+| Everything else | oauth2-proxy `forward_auth` → SvelteKit | Passkey via Pocket-ID |
 
 ---
 
@@ -450,7 +461,7 @@ The FLAC is never deleted. It serves as the source of truth for re-trimming, ful
 
 | Phase  | Deliverable                                                          | What it enables                                                   |
 | ------ | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **1**  | Docker Compose skeleton with Caddy, SvelteKit shell, Pocket-ID       | Working auth flow, empty dashboard                                |
+| **1**  | Docker Compose with Caddy, SvelteKit, Pocket-ID, oauth2-proxy       | Working auth flow, empty dashboard                                |
 | **2**  | Convex schema, basic queries/mutations                               | Data layer ready                                                  |
 | **3**  | Upload endpoint, Pi integration                                      | Files arrive on the server                                        |
 | **4**  | Dashboard page with song groups, unsorted section, audio player      | Browse and play recordings (manually added to Convex for testing) |

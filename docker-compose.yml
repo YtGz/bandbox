@@ -1,0 +1,95 @@
+services:
+  # ── Reverse Proxy ─────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      - sveltekit
+      - oauth2-proxy
+      - pocket-id
+
+  # ── SvelteKit App ─────────────────────────────────────────
+  sveltekit:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - audio_data:/data/audio
+    environment:
+      PUBLIC_CONVEX_URL: ${PUBLIC_CONVEX_URL}
+      CONVEX_URL: ${CONVEX_URL:-${PUBLIC_CONVEX_URL}}
+      PI_API_KEY: ${PI_API_KEY}
+      WORKER_API_KEY: ${WORKER_API_KEY}
+      AUDIO_DATA_PATH: /data/audio
+    expose:
+      - "3000"
+
+  # ── Python Audio Worker ───────────────────────────────────
+  python-worker:
+    build: ./python-worker
+    restart: unless-stopped
+    volumes:
+      - audio_data:/data/audio
+    environment:
+      CONVEX_HTTP_URL: ${PUBLIC_CONVEX_URL}
+      WORKER_API_KEY: ${WORKER_API_KEY}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      AUDIO_DATA_PATH: /data/audio
+
+  # ── Pocket-ID (OIDC Provider) ─────────────────────────────
+  pocket-id:
+    image: stonith404/pocket-id
+    restart: unless-stopped
+    volumes:
+      - pocket_id_data:/app/data
+    environment:
+      PUBLIC_APP_URL: https://${DOMAIN}/pocket-id
+      TRUST_PROXY: "true"
+    expose:
+      - "8080"
+
+  # ── oauth2-proxy (Auth Gate) ──────────────────────────────
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7
+    restart: unless-stopped
+    command:
+      - --http-address=0.0.0.0:4180
+      # OIDC provider (Pocket-ID)
+      - --provider=oidc
+      - --oidc-issuer-url=https://${DOMAIN}/pocket-id/oidc
+      - --client-id=${OIDC_CLIENT_ID}
+      - --client-secret=${OIDC_CLIENT_SECRET}
+      # Cookie
+      - --cookie-secret=${COOKIE_SECRET}
+      - --cookie-secure=true
+      - --cookie-samesite=lax
+      - --cookie-expire=720h
+      # Redirect
+      - --redirect-url=https://${DOMAIN}/oauth2/callback
+      # Allow all authenticated users (Pocket-ID controls who can register)
+      - --email-domain=*
+      # Upstream is handled by Caddy's forward_auth, not oauth2-proxy
+      - --upstream=static://202
+      # Misc
+      - --reverse-proxy=true
+      - --skip-provider-button=true
+    expose:
+      - "4180"
+    depends_on:
+      - pocket-id
+
+volumes:
+  audio_data:
+  caddy_data:
+  caddy_config:
+  pocket_id_data:
