@@ -30,11 +30,12 @@ Riff match scores (0–1) between recording pairs, broken down by feature:
   • Contour (pitch movement)   — good for melodic riffs, noisy for atonal parts
   • Spectral (tone/distortion) — least reliable, use as tiebreaker only
 
-Interpretation:
-  ≥0.80  — almost certainly the same song
-  0.60–0.79 — likely the same song, look for confirming speech
-  0.40–0.59 — ambiguous, rely on speech and tempo
-  <0.40  — different songs unless speech strongly contradicts
+Interpretation guide (scores are weighted cosine/DTW similarity, 0–1):
+  High scores (top quartile of reported pairs) — strong same-song signal
+  Mid scores — ambiguous, rely on speech and tempo to decide
+  Low scores (near the bottom of reported pairs) — likely different songs
+  Missing pairs — no significant similarity detected, treat as different
+Note: pairs below 0.3 are pre-filtered out, so absent pairs = low match.
 
 ─── SIGNAL 2: SPEECH (per recording) ─────────────────────────────────────
 
@@ -72,7 +73,7 @@ about to happen, or both. Examples:
 
 CRITICAL: If the reference direction is unclear, IGNORE the transition.
 Do not let ambiguous transitions override audio similarity evidence.
-When speech and audio conflict, trust audio similarity ≥0.70 over speech.
+When speech and audio conflict, trust high audio similarity over speech.
 
 ─── YOUR TASK ────────────────────────────────────────────────────────────
 
