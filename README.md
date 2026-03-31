@@ -116,6 +116,64 @@ bunx convex dev
 | `bun run format` | Auto-format all files    |
 | `bun run test`   | Run unit tests           |
 
+## Deployment
+
+### Prerequisites
+
+- A server with [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/)
+- A domain name pointed at your server (for Caddy's automatic HTTPS)
+- A [Convex](https://www.convex.dev/) account and deployment
+
+### 1. Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Fill in the values — at minimum: `DOMAIN`, `PUBLIC_CONVEX_URL`, `PI_API_KEY`, `WORKER_API_KEY`, and `COOKIE_SECRET`. Leave the OIDC fields empty for now.
+
+Generate a cookie secret:
+
+```bash
+openssl rand -base64 32
+```
+
+### 2. Start the stack
+
+```bash
+docker compose up -d
+```
+
+### 3. Set up Pocket-ID
+
+Open `https://your-domain/pocket-id` in your browser. On first launch:
+
+1. Create your admin account (register a passkey)
+2. Go to OIDC Clients → Create a new client
+3. Set the redirect URI to `https://your-domain/oauth2/callback`
+4. Copy the **Client ID** and **Client Secret**
+
+### 4. Connect oauth2-proxy to Pocket-ID
+
+Paste the OIDC credentials into your `.env` file:
+
+```bash
+OIDC_CLIENT_ID=your-client-id
+OIDC_CLIENT_SECRET=your-client-secret
+```
+
+Restart oauth2-proxy to pick up the new config:
+
+```bash
+docker compose restart oauth2-proxy
+```
+
+### 5. Register band members
+
+Each band member opens `https://your-domain/pocket-id` and registers a passkey on their phone or laptop. No passwords — just biometrics or a hardware key.
+
+After registering, they can access the BandBox dashboard at `https://your-domain/`.
+
 ## Documentation
 
 - [Pi Setup Guide](pi/README.md) — How to set up the Pwnagotchi as a recording uploader
