@@ -30,12 +30,22 @@ Riff match scores (0–1) between recording pairs, broken down by feature:
   • Contour (pitch movement)   — good for melodic riffs, noisy for atonal parts
   • Spectral (tone/distortion) — least reliable, use as tiebreaker only
 
-Interpretation guide (scores are weighted cosine/DTW similarity, 0–1):
-  High scores (top quartile of reported pairs) — strong same-song signal
-  Mid scores — ambiguous, rely on speech and tempo to decide
-  Low scores (near the bottom of reported pairs) — likely different songs
-  Missing pairs — no significant similarity detected, treat as different
-Note: pairs below 0.3 are pre-filtered out, so absent pairs = low match.
+Interpretation:
+  With many pairs, use relative ranking:
+    Top quartile — strong same-song signal
+    Mid range    — ambiguous, rely on speech and tempo
+    Bottom       — likely different songs
+    Missing      — no significant match (pre-filtered below 0.3)
+
+  With few pairs (1–3), relative ranking is meaningless. Use the
+  per-feature breakdown instead:
+    Groove/Drums ≥0.75 — strong same-song signal (most reliable features)
+    Groove/Drums 0.50–0.74 — ambiguous, lean on speech
+    Groove/Drums <0.50 — likely different songs
+    Contour ≥0.65 — similar melodic shape (noisy with heavy distortion)
+    Spectral — use only as tiebreaker, not reliable alone
+  When groove AND drums both score high, that's a confident match even
+  if contour and spectral are low (distortion kills those features).
 
 ─── SIGNAL 2: SPEECH (per recording) ─────────────────────────────────────
 
