@@ -374,6 +374,8 @@ def extract_contour(
     song_start_sec: float,
     riff_start_sec: float,
     riff_end_sec: float,
+    *,
+    _preloaded: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> dict:
     """Extract melodic contour for a riff.
 
@@ -385,28 +387,43 @@ def extract_contour(
     If pYIN is confident, it wins regardless. Otherwise, the better of
     centroid and rolloff is selected by contour quality score.
 
+    Args:
+        _preloaded: Optional (y_harm, y_perc) tuple from extract_fingerprint
+            to avoid redundant audio loading and HPSS computation.
+
     Returns a dict with:
     - contour: fixed-length normalized curve (for DTW)
-    - intervals: quantized up/down/flat sequence
+    - intervals: quantized multi-level sequence (-2, -1, 0, +1, +2)
     - method: "pyin", "centroid", or "rolloff"
     - pyinConfidence: how confident pYIN was
     """
-    y, sr = librosa.load(audio_path, sr=SR, mono=True)
+    if _preloaded is not None:
+        y_harm = _preloaded[0]
+        sr = SR
+    else:
+        y, sr = librosa.load(audio_path, sr=SR, mono=True)
 
-    abs_start = song_start_sec + riff_start_sec
-    abs_end = song_start_sec + riff_end_sec
-    y_riff = y[int(abs_start * sr):int(abs_end * sr)]
+        abs_start = song_start_sec + riff_start_sec
+        abs_end = song_start_sec + riff_end_sec
+        y_riff = y[int(abs_start * sr):int(abs_end * sr)]
 
-    if len(y_riff) < sr:
+        if len(y_riff) < sr:
+            return {
+                "contour": [],
+                "intervals": [],
+                "method": "none",
+                "pyinConfidence": 0.0,
+            }
+
+        y_harm, _ = _hpss(y_riff)
+
+    if len(y_harm) < sr:
         return {
             "contour": [],
             "intervals": [],
             "method": "none",
             "pyinConfidence": 0.0,
         }
-
-    # HPSS — analyze harmonic layer only
-    y_harm, _ = _hpss(y_riff)
 
     # ── Method 3: pYIN (most precise when confident) ──
     pyin_contour, pyin_conf = _extract_contour_pyin(y_harm, sr)
@@ -456,12 +473,20 @@ def extract_contour(
     else:
         normalized = np.zeros_like(resampled)
 
-    # ── Quantize to interval sequence (up/down/flat) ──
+    # ── Quantize to multi-level interval sequence ──
+    # Five levels capture the SIZE of pitch jumps, not just direction:
+    #   -2 = big drop, -1 = small drop, 0 = flat, +1 = small rise, +2 = big rise
+    # The threshold between "small" and "big" is 1 standard deviation of deltas.
     delta = np.diff(normalized)
-    threshold = np.std(delta) * 0.25
-    intervals = np.zeros_like(delta)
-    intervals[delta > threshold] = 1
-    intervals[delta < -threshold] = -1
+    delta_std = np.std(delta)
+    small_threshold = delta_std * 0.25
+    big_threshold = delta_std * 1.0
+
+    intervals = np.zeros(len(delta), dtype=int)
+    intervals[(delta > small_threshold) & (delta <= big_threshold)] = 1
+    intervals[delta > big_threshold] = 2
+    intervals[(delta < -small_threshold) & (delta >= -big_threshold)] = -1
+    intervals[delta < -big_threshold] = -2
 
     return {
         "contour": [round(float(x), 4) for x in normalized],
@@ -527,6 +552,52 @@ def _onset_to_beat_pattern(
     return [round(float(x), 4) for x in groove], round(uniformity, 4)
 
 
+def extract_features(
+    audio_path: str,
+    song_start_sec: float,
+    riff_start_sec: float,
+    riff_end_sec: float,
+) -> tuple[dict, dict]:
+    """Extract both fingerprint and contour in a single pass.
+
+    Loads audio once, runs HPSS once, reuses the results for both
+    fingerprint extraction and contour extraction.
+
+    Returns (fingerprint_dict, contour_dict).
+    """
+    y, sr = librosa.load(audio_path, sr=SR, mono=True)
+
+    abs_start = song_start_sec + riff_start_sec
+    abs_end = song_start_sec + riff_end_sec
+    y_riff = y[int(abs_start * sr):int(abs_end * sr)]
+
+    empty_fp = {
+        "groove": [], "drums": [], "spectral": [],
+        "tempo": 0, "onsetUniformity": 0.5,
+    }
+    empty_ct = {
+        "contour": [], "intervals": [],
+        "method": "none", "pyinConfidence": 0.0,
+    }
+
+    if len(y_riff) < sr:
+        return empty_fp, empty_ct
+
+    # Single HPSS pass — reused by both fingerprint and contour
+    y_harm, y_perc = _hpss(y_riff)
+
+    # Extract fingerprint (uses y_riff, y_harm, y_perc)
+    fingerprint = _extract_fingerprint_from_audio(y_riff, y_harm, y_perc, sr)
+
+    # Extract contour (reuses y_harm — no redundant load or HPSS)
+    contour = extract_contour(
+        audio_path, song_start_sec, riff_start_sec, riff_end_sec,
+        _preloaded=(y_harm, y_perc),
+    )
+
+    return fingerprint, contour
+
+
 def extract_fingerprint(
     audio_path: str,
     song_start_sec: float,
@@ -534,6 +605,9 @@ def extract_fingerprint(
     riff_end_sec: float,
 ) -> dict:
     """Extract a complete fingerprint for a single riff.
+
+    Prefer extract_features() when you also need the contour — it avoids
+    redundant audio loading and HPSS computation.
 
     Returns a dict with:
     - groove: 16-slot beat-aligned onset pattern (full signal)
@@ -557,8 +631,17 @@ def extract_fingerprint(
             "onsetUniformity": 0.5,
         }
 
-    # ── HPSS ──
     y_harm, y_perc = _hpss(y_riff)
+    return _extract_fingerprint_from_audio(y_riff, y_harm, y_perc, sr)
+
+
+def _extract_fingerprint_from_audio(
+    y_riff: np.ndarray,
+    y_harm: np.ndarray,
+    y_perc: np.ndarray,
+    sr: int,
+) -> dict:
+    """Core fingerprint extraction from pre-loaded, pre-separated audio."""
 
     # ── Beat tracking ──
     beats = _detect_beats(y_riff, sr)

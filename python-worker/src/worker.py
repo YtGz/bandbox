@@ -10,7 +10,7 @@ from .convex_client import ConvexWorkerClient
 from .normalize import normalize
 from .trim import detect_boundaries
 from .encode import split_and_encode
-from .analyze import segment_riffs, extract_fingerprint, extract_contour
+from .analyze import segment_riffs, extract_features
 from .match import find_matches
 from .group import group_recordings
 
@@ -94,13 +94,8 @@ def process_recording(manifest: dict, client: ConvexWorkerClient) -> None:
             seg["startSec"],
             seg["endSec"],
         )
-        fingerprint = extract_fingerprint(
-            flac_path,
-            trim_result.start_sec,
-            seg["startSec"],
-            seg["endSec"],
-        )
-        contour_data = extract_contour(
+        # Single pass: loads audio once, runs HPSS once
+        fingerprint, contour_data = extract_features(
             flac_path,
             trim_result.start_sec,
             seg["startSec"],

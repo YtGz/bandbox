@@ -74,8 +74,11 @@ What we track:   ▁▁▁▁▃▃▃▃▅▅▅▅▇▇▇▇▅▅▅▅▃
                    E     G     A     B     A     G
 
 Quantized:       ════ ╱╱╱╱ ╱╱╱╱ ╱╱╱╱ ╲╲╲╲ ╲╲╲╲
-                 flat   up    up    up   down  down
+                 flat  +2     +1    +1    -1    -2
+                     (big rise)(small)(small)(big drop)
 ```
+
+The interval sequence uses five levels — not just direction, but **magnitude**: `-2` (big drop), `-1` (small drop), `0` (flat), `+1` (small rise), `+2` (big rise). This matters because the *size* of a pitch jump is a core part of a riff's identity: a minor second oscillation (E→F→E) feels completely different from a perfect fourth jump (E→A→E), even though both go "up then down."
 
 The rapid picking creates a sustained buzz at each pitch — almost like a bowed string. The note doesn't decay before you can measure it. The pitch *changes slowly* while the picking is fast, producing a smooth, wave-like melodic contour with clear directional movement.
 
