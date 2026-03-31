@@ -1,0 +1,16 @@
+[Unit]
+Description=BandBox Recording Uploader
+After=multi-user.target pisugar-server.service
+Wants=pisugar-server.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/pi/bandbox/pi/bandbox.py
+WorkingDirectory=/home/pi/bandbox/pi
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/pi/.bandbox/env
+
+[Install]
+WantedBy=multi-user.target
