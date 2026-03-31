@@ -257,6 +257,21 @@ def run() -> None:
 
     client = ConvexWorkerClient()
 
+    # Check beat tracker availability and notify frontend
+    from .analyze import HAS_MADMOM
+    if not HAS_MADMOM:
+        log.warning("⚠️  madmom-modern not available — beat tracking quality degraded")
+        try:
+            client.set_system_warning(
+                "beat_tracker_degraded",
+                "madmom-modern is not installed. Beat tracking is using librosa "
+                "as a fallback, which is less accurate — especially for fast tempos. "
+                "Install madmom-modern and restart the worker, then reprocess "
+                "affected recordings for better results.",
+            )
+        except Exception:
+            pass  # non-critical
+
     while True:
         # Ensure directory exists
         os.makedirs(manifests_dir, exist_ok=True)

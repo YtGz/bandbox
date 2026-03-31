@@ -40,12 +40,20 @@ PYIN_CONFIDENCE_THRESHOLD = 0.5 # use pYIN when confidence exceeds this
 SLOTS_PER_BEAT = 16             # subdivisions per beat for groove patterns
 MIN_BEATS_FOR_GROOVE = 4        # need at least this many beats
 
-# Beat tracking — use madmom when available, librosa as fallback
+# Beat tracking — madmom-modern is the primary beat tracker (neural RNN + DBN).
+# If it fails to import (broken install, missing C extensions), we fall back
+# to librosa's simpler beat tracker and warn the user via a system warning.
 try:
     import madmom
     import madmom.features.beats
     HAS_MADMOM = True
 except ImportError:
+    import logging as _logging
+    _logging.getLogger("bandbox-worker").warning(
+        "⚠️  madmom-modern not available — falling back to librosa beat tracking. "
+        "Beat detection accuracy will be significantly reduced, especially for "
+        "fast tempos. Install madmom-modern to fix: pip install madmom-modern"
+    )
     HAS_MADMOM = False
 
 
@@ -73,20 +81,19 @@ def _detect_beats(
 ) -> np.ndarray:
     """Detect beat positions in seconds, relative to the provided audio signal.
 
-    Uses madmom's neural beat tracker when available (robust up to 215 BPM
-    with DBN postprocessing), falls back to librosa's beat tracker.
+    Primary: madmom's neural beat tracker (RNN + DBN postprocessing).
+    Robust up to 215 BPM. Writes the riff segment to a temporary WAV
+    file because madmom's RNNBeatProcessor requires a file path.
 
-    Note: madmom requires a file path and processes the entire file. Since we
-    pass it pre-sliced audio segments via librosa anyway, we use librosa's
-    beat tracker for riff-level analysis (which accepts numpy arrays directly).
-    madmom is used as a fallback when librosa struggles, by writing a temporary
-    WAV file.
+    Fallback: librosa's beat tracker. Less accurate, especially at
+    high tempos, but accepts numpy arrays directly and has no
+    external dependencies.
 
     Args:
         y: Audio signal as numpy array (the riff segment).
         sr: Sample rate.
-        audio_path: Original file path (currently unused — reserved for future
-            whole-file beat tracking cache).
+        audio_path: Original file path (reserved for future whole-file
+            beat tracking cache).
     """
     if HAS_MADMOM:
         try:
@@ -110,14 +117,28 @@ def _detect_beats(
 
             if len(beats) >= MIN_BEATS_FOR_GROOVE:
                 return beats
-        except Exception:
-            pass  # fall through to librosa
+        except Exception as e:
+            import logging
+            logging.getLogger("bandbox-worker").warning(
+                "madmom beat tracking failed, falling back to librosa: %s", e,
+            )
 
-    # Librosa fallback — works directly on numpy arrays
+    # Librosa fallback — less accurate, especially at high tempos
+    if not HAS_MADMOM and not _detect_beats._warned_no_madmom:
+        _detect_beats._warned_no_madmom = True
+        import logging
+        logging.getLogger("bandbox-worker").warning(
+            "Processing with librosa beat tracking (madmom-modern not installed). "
+            "Results may be less accurate. Reprocess recordings after installing "
+            "madmom-modern for better quality."
+        )
+
     tempo, beat_frames = librosa.beat.beat_track(
         y=y, sr=sr, hop_length=HOP_LENGTH,
     )
     return librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP_LENGTH)
+
+_detect_beats._warned_no_madmom = False  # type: ignore[attr-defined]
 
 
 # ════════════════════════════════════════════════════════════
