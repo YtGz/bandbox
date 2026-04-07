@@ -16,8 +16,9 @@ FROM oven/bun:1-slim
 
 WORKDIR /app
 
-# Copy built output and production deps
+# Copy built output and runtime deps
 COPY --from=builder /app/build build/
+COPY --from=builder /app/node_modules node_modules/
 COPY --from=builder /app/package.json .
 
 # Audio data volume mount point
