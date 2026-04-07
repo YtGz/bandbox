@@ -6,7 +6,7 @@ bun.lock
 bun.lockb
 
 # Documentation
-AGENTS.md
+*.md
 
 # Miscellaneous
 /static/
