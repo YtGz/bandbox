@@ -11,36 +11,16 @@
 # Usage:
 #   # Bring-your-own reverse proxy + OIDC provider:
 #   docker compose up -d
-#   # → oauth2-proxy listens on host port 4180 (configurable via OAUTH2_PROXY_PORT)
-#   # → point your reverse proxy at localhost:4180
+#   # oauth2-proxy on host port 48231 (set OAUTH2_PROXY_PORT to change)
+#   # point your reverse proxy at localhost:48231
 #
 #   # Standalone — includes Caddy and Pocket-ID:
 #   docker compose --profile standalone up -d
-#   # → Caddy binds 80/443 directly
+#   # Caddy binds 80/443 directly
 #
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 services:
-  # ── Reverse Proxy (optional — use your own) ──────────────
-  caddy:
-    profiles: [standalone]
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp' # HTTP/3
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    environment:
-      DOMAIN: ${DOMAIN}
-    depends_on:
-      - sveltekit
-      - oauth2-proxy
-      - pocket-id
-
   # ── SvelteKit App ─────────────────────────────────────────
   sveltekit:
     build: .
@@ -68,19 +48,6 @@ services:
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_BASE_URL: ${LLM_BASE_URL}
       AUDIO_DATA_PATH: /data/audio
-
-  # ── Pocket-ID (optional — use your own OIDC provider) ────
-  pocket-id:
-    profiles: [standalone]
-    image: stonith404/pocket-id
-    restart: unless-stopped
-    volumes:
-      - pocket_id_data:/app/data
-    environment:
-      PUBLIC_APP_URL: https://${DOMAIN}/pocket-id
-      TRUST_PROXY: 'true'
-    expose:
-      - '8080'
 
   # ── oauth2-proxy (Auth Gate) ──────────────────────────────
   oauth2-proxy:
@@ -110,7 +77,40 @@ services:
       - --reverse-proxy=true
       - --skip-provider-button=true
     ports:
-      - '${OAUTH2_PROXY_PORT:-4180}:4180'
+      - '${OAUTH2_PROXY_PORT:-48231}:4180'
+
+  # ── Reverse Proxy (optional — use your own) ──────────────
+  caddy:
+    profiles: [standalone]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      - sveltekit
+      - oauth2-proxy
+      - pocket-id
+
+  # ── Pocket-ID (optional — use your own OIDC provider) ────
+  pocket-id:
+    profiles: [standalone]
+    image: stonith404/pocket-id
+    restart: unless-stopped
+    volumes:
+      - pocket_id_data:/app/data
+    environment:
+      PUBLIC_APP_URL: https://${DOMAIN}/pocket-id
+      TRUST_PROXY: 'true'
+    expose:
+      - '8080'
 
 volumes:
   audio_data:

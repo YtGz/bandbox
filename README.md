@@ -110,7 +110,7 @@ openssl rand -base64 32
 
 ### 2. Launch
 
-**Standalone** (includes Caddy + Pocket-ID):
+**Standalone** (includes Caddy + Pocket-ID — everything in one box):
 ```bash
 docker compose --profile standalone up -d
 ```
@@ -118,9 +118,16 @@ docker compose --profile standalone up -d
 **Bring-your-own** (you already have a reverse proxy and/or OIDC provider):
 ```bash
 docker compose up -d
-# Set OIDC_ISSUER_URL in .env to your existing OIDC provider
-# Point your reverse proxy at sveltekit:3000 and oauth2-proxy:4180
 ```
+
+Then add BandBox to your existing Caddy:
+```caddy
+bandbox.example.com {
+    reverse_proxy localhost:48231
+}
+```
+
+That's it — oauth2-proxy handles authentication and proxies to SvelteKit internally. Set `OIDC_ISSUER_URL` in `.env` to point at your existing OIDC provider. Change the port with `OAUTH2_PROXY_PORT` if needed.
 
 ### 3. Set up authentication
 
