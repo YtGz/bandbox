@@ -8,19 +8,19 @@
  * @module
  */
 
-import type * as http from '../http.js';
-import type * as recordings from '../recordings.js';
-import type * as riffs from '../riffs.js';
-import type * as seed from '../seed.js';
-import type * as sets from '../sets.js';
-import type * as songs from '../songs.js';
-import type * as systemWarnings from '../systemWarnings.js';
+import type * as http from "../http.js";
+import type * as recordings from "../recordings.js";
+import type * as riffs from "../riffs.js";
+import type * as seed from "../seed.js";
+import type * as sets from "../sets.js";
+import type * as songs from "../songs.js";
+import type * as systemWarnings from "../systemWarnings.js";
 
 import type {
   ApiFromModules,
   FilterApi,
-  FunctionReference
-} from 'convex/server';
+  FunctionReference,
+} from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   http: typeof http;
@@ -42,7 +42,7 @@ declare const fullApi: ApiFromModules<{
  */
 export declare const api: FilterApi<
   typeof fullApi,
-  FunctionReference<any, 'public'>
+  FunctionReference<any, "public">
 >;
 
 /**
@@ -55,7 +55,7 @@ export declare const api: FilterApi<
  */
 export declare const internal: FilterApi<
   typeof fullApi,
-  FunctionReference<any, 'internal'>
+  FunctionReference<any, "internal">
 >;
 
 export declare const components: {};
