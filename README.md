@@ -112,6 +112,8 @@ openssl rand -base64 32
 
 **Standalone** (includes Caddy + Pocket-ID — everything in one box):
 ```bash
+# First: uncomment caddy_data, caddy_config, and pocket_id_data
+# in the volumes section of docker-compose.yml
 docker compose --profile standalone up -d
 ```
 

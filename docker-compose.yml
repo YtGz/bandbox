@@ -114,6 +114,7 @@ services:
 
 volumes:
   audio_data:
-  caddy_data:
-  caddy_config:
-  pocket_id_data:
+  # Uncomment these when using the standalone profile:
+  # caddy_data:
+  # caddy_config:
+  # pocket_id_data:
