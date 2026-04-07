@@ -8,7 +8,7 @@ RUN bun install --frozen-lockfile
 
 # Copy source and build
 COPY . .
-RUN bun run build
+RUN bun run --bun build
 
 # ── Production image ──────────────────────────────────────
 
@@ -18,7 +18,6 @@ WORKDIR /app
 
 # Copy built output and production deps
 COPY --from=builder /app/build build/
-COPY --from=builder /app/node_modules node_modules/
 COPY --from=builder /app/package.json .
 
 # Audio data volume mount point
