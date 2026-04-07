@@ -102,10 +102,15 @@ Recordings flow through four stages. Each has clear ownership and retention rule
 
 ```bash
 cp .env.example .env
-# Fill in: DOMAIN, PUBLIC_CONVEX_URL, PI_API_KEY, WORKER_API_KEY
-# Generate a cookie secret:
-openssl rand -base64 32
-# Leave OIDC fields empty for now
+# Fill in: DOMAIN, PUBLIC_CONVEX_URL, CONVEX_HTTP_URL, PI_API_KEY, WORKER_API_KEY
+# Generate a cookie secret (must be exactly 16, 24, or 32 raw bytes):
+openssl rand -hex 16
+```
+
+Then set the worker API key on your Convex deployment (must match the value in `.env`):
+
+```bash
+bunx convex env set WORKER_API_KEY "your-key-here" --prod
 ```
 
 ### 2. Launch
