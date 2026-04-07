@@ -2,7 +2,7 @@
 name = "bandbox-worker"
 version = "0.2.0"
 description = "Audio processing pipeline for BandBox"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2.2",
     "scipy>=1.14",
@@ -10,10 +10,10 @@ dependencies = [
     "soundfile>=0.13",
     "pyloudnorm>=0.1",
     "httpx>=0.28",
-    "madmom-modern>=0.17",
+    "madmom-modern @ git+https://github.com/imcmurray/madmom-modern.git",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ruff>=0.9",
 ]

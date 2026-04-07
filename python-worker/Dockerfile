@@ -3,7 +3,7 @@ FROM python:3.12-slim
 # Install ffmpeg for Opus encoding, system audio libs, and build deps for madmom
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ffmpeg libsndfile1 \
+        ffmpeg libsndfile1 git \
         gcc g++ pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
