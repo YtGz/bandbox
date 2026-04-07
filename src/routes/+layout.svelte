@@ -2,13 +2,13 @@
   import { page } from '$app/state';
   import { locales, localizeHref } from '$lib/paraglide/runtime';
   import { setupConvex } from 'convex-svelte';
-  import { PUBLIC_CONVEX_URL } from '$env/static/public';
+  import { env } from '$env/dynamic/public';
   import './layout.css';
   import favicon from '$lib/assets/favicon.svg';
 
   let { children } = $props();
 
-  setupConvex(PUBLIC_CONVEX_URL);
+  setupConvex(env.PUBLIC_CONVEX_URL);
 </script>
 
 <svelte:head>
