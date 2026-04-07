@@ -100,8 +100,10 @@ services:
       - --redirect-url=https://${DOMAIN}/oauth2/callback
       # Allow all authenticated users (OIDC provider controls who can register)
       - --email-domain=*
-      # Upstream is handled by the reverse proxy's forward_auth, not oauth2-proxy
-      - --upstream=static://202
+      # Proxy authenticated requests to SvelteKit
+      - --upstream=http://sveltekit:3000
+      # Pi uploads bypass auth (API key only)
+      - --skip-auth-route=/api/upload
       # Misc
       - --reverse-proxy=true
       - --skip-provider-button=true

@@ -137,34 +137,29 @@ Used as training signal for the future custom ML model. Index: `by_recording`.
 
 ## 3. Authentication
 
-Authentication uses [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) in front of SvelteKit, with [Pocket-ID](https://github.com/stonith404/pocket-id) as the OIDC provider. This keeps all auth logic out of the application — SvelteKit serves pages, oauth2-proxy decides who gets in.
+Authentication uses [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) in front of SvelteKit, with any OIDC-compatible provider (e.g. [Pocket-ID](https://github.com/stonith404/pocket-id), Keycloak, Authentik). This keeps all auth logic out of the application — SvelteKit serves pages, oauth2-proxy decides who gets in.
 
 ### Why oauth2-proxy?
 
-BandBox doesn't need per-user features. Every band member sees the same dashboard, edits the same songs, reviews the same recordings. The only question is: "Are you in the band?" Pocket-ID controls who can register a passkey. oauth2-proxy enforces the login gate. SvelteKit stays auth-free.
+BandBox doesn't need per-user features. Every band member sees the same dashboard, edits the same songs, reviews the same recordings. The only question is: "Are you in the band?" The OIDC provider controls who can register. oauth2-proxy enforces the login gate. SvelteKit stays auth-free.
 
 ### How It Works
 
-1. Caddy receives all requests and routes them through `forward_auth` to oauth2-proxy
+1. The reverse proxy forwards all traffic to oauth2-proxy
 2. oauth2-proxy checks for a valid session cookie
-3. If missing or expired, the user is redirected to Pocket-ID's passkey login
-4. After authentication, oauth2-proxy sets a secure cookie (30-day expiry) and passes the request through
-5. SvelteKit never sees unauthenticated requests (except `/api/upload`)
+3. If missing or expired, the user is redirected to the OIDC provider's login
+4. After authentication, oauth2-proxy sets a secure cookie (30-day expiry) and proxies the request to SvelteKit
+5. SvelteKit never sees unauthenticated requests
+6. `/api/upload` is excluded from auth via `--skip-auth-route` (Pi uses API key authentication)
 
-### Pocket-ID Setup
+### OIDC Provider Setup
 
-Pocket-ID runs as a Docker container and provides a WebAuthn/passkey-based login flow over OIDC. Each band member registers a passkey on their phone or laptop. No passwords.
+The standalone Docker Compose profile includes Pocket-ID, a self-hosted passkey/WebAuthn provider. Alternatively, point `OIDC_ISSUER_URL` at any existing OIDC provider.
 
-Caddy routes `/pocket-id/*` to the Pocket-ID container. After first boot, create an OIDC client in the Pocket-ID admin UI and copy the client ID and secret into the `.env` file.
-
-### Protected Routes
-
-| Path            | Auth method                                                               |
-| --------------- | ------------------------------------------------------------------------- |
-| `/api/upload`   | API key (Pi) — Caddy routes directly to SvelteKit, bypassing oauth2-proxy |
-| `/pocket-id/*`  | Public — the OIDC provider itself                                         |
-| `/oauth2/*`     | oauth2-proxy endpoints (callback, sign-out)                               |
-| Everything else | oauth2-proxy → Pocket-ID passkey login                                    |
+Whichever provider you use:
+1. Create an OIDC client with redirect URI `https://your-domain/oauth2/callback`
+2. Set `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` in `.env`
+3. If using an external provider, set `OIDC_ISSUER_URL` in `.env`
 
 ---
 
@@ -550,15 +545,21 @@ Managed via a `.env` file (see `.env.example`):
 
 ### Reverse Proxy Routing
 
-When using the bundled Caddy (standalone profile), routing is handled by the `Caddyfile`. When bringing your own reverse proxy, configure equivalent routes:
+oauth2-proxy acts as both the auth gate *and* the upstream proxy to SvelteKit. This simplifies reverse proxy configuration — everything goes to oauth2-proxy, which handles authentication and forwards to SvelteKit internally.
 
-| Path | Target | Auth |
-|---|---|---|
-| `/api/upload` | SvelteKit (:3000) | API key (Pi) — bypass auth gate |
-| `/oauth2/*` | oauth2-proxy (:4180) | Public (handles login flow) |
-| Everything else | `forward_auth` to oauth2-proxy (:4180), then SvelteKit (:3000) | OIDC via oauth2-proxy |
+**BYO reverse proxy** — the minimal config is a single `reverse_proxy` to oauth2-proxy:
 
-If using the standalone profile, Caddy also routes `/pocket-id/*` to the bundled Pocket-ID instance.
+```
+bandbox.example.com {
+    reverse_proxy oauth2-proxy:4180
+}
+```
+
+oauth2-proxy is configured with `--skip-auth-route=/api/upload` so the Pi's API-key-authenticated uploads bypass OIDC login. All other requests require a valid session cookie.
+
+**Standalone profile** — the bundled Caddyfile adds a route for `/pocket-id/*` to the Pocket-ID container. Everything else goes to oauth2-proxy.
+
+If your existing OIDC provider runs on a separate domain (not behind the same reverse proxy), no special routing is needed — oauth2-proxy talks to it directly via `OIDC_ISSUER_URL`.
 
 ---
 
