@@ -10,22 +10,25 @@ export const get = query({
   }
 });
 
-/** List all ungrouped recordings. */
+/** List all ungrouped song recordings. */
 export const listUngrouped = query({
   args: {},
   returns: v.array(v.any()),
   handler: async (ctx) => {
     return await ctx.db
       .query('recordings')
-      .withIndex('by_state', (q) => q.eq('state', 'ungrouped'))
+      .withIndex('by_kind_and_state', (q) =>
+        q.eq('kind', 'song').eq('state', 'ungrouped')
+      )
       .order('desc')
       .collect();
   }
 });
 
-/** List recordings by state. */
+/** List song recordings by state. */
 export const listByState = query({
   args: {
+    kind: v.union(v.literal('song'), v.literal('set')),
     state: v.union(
       v.literal('uploading'),
       v.literal('normalizing'),
@@ -33,34 +36,49 @@ export const listByState = query({
       v.literal('analyzing'),
       v.literal('grouped'),
       v.literal('ungrouped'),
-      v.literal('reprocess')
+      v.literal('reprocess'),
+      v.literal('ready')
     )
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('recordings')
-      .withIndex('by_state', (q) => q.eq('state', args.state))
+      .withIndex('by_kind_and_state', (q) =>
+        q.eq('kind', args.kind).eq('state', args.state)
+      )
       .collect();
   }
 });
 
-/** List all recordings currently being processed. */
+/** List all recordings currently being processed (both song and set pipelines). */
 export const listProcessing = query({
   args: {},
   returns: v.array(v.any()),
   handler: async (ctx) => {
-    const states = [
+    const songStates = [
       'uploading',
       'normalizing',
       'trimming',
       'analyzing'
     ] as const;
+    const setStates = ['uploading', 'normalizing'] as const;
     const results = [];
-    for (const state of states) {
+    for (const state of songStates) {
       const recs = await ctx.db
         .query('recordings')
-        .withIndex('by_state', (q) => q.eq('state', state))
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'song').eq('state', state)
+        )
+        .collect();
+      results.push(...recs);
+    }
+    for (const state of setStates) {
+      const recs = await ctx.db
+        .query('recordings')
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'set').eq('state', state)
+        )
         .collect();
       results.push(...recs);
     }
@@ -68,9 +86,27 @@ export const listProcessing = query({
   }
 });
 
+/** List all set recordings in ready state. */
+export const listSets = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    return await ctx.db
+      .query('recordings')
+      .withIndex('by_kind_and_state', (q) =>
+        q.eq('kind', 'set').eq('state', 'ready')
+      )
+      .order('desc')
+      .collect();
+  }
+});
+
 /**
  * Create a new recording. Returns the new ID, or null if the hash
  * already exists (deduplication).
+ *
+ * Defaults to kind: 'song'. The worker reclassifies to 'set' after
+ * checking duration (>= 17 min threshold).
  */
 export const create = mutation({
   args: {
@@ -86,6 +122,7 @@ export const create = mutation({
     if (existing) return null;
 
     return await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: args.filename,
       fileHash: args.fileHash,
       uploadedAt: Date.now(),
@@ -98,19 +135,12 @@ export const create = mutation({
 export const updateState = mutation({
   args: {
     recordingId: v.id('recordings'),
-    state: v.union(
-      v.literal('uploading'),
-      v.literal('normalizing'),
-      v.literal('trimming'),
-      v.literal('analyzing'),
-      v.literal('grouped'),
-      v.literal('ungrouped'),
-      v.literal('reprocess')
-    ),
+    state: v.string(),
     pathFlac: v.optional(v.string()),
     pathSong: v.optional(v.string()),
     pathPre: v.optional(v.string()),
     pathPost: v.optional(v.string()),
+    pathOpus: v.optional(v.string()),
     cutStartSec: v.optional(v.number()),
     cutEndSec: v.optional(v.number()),
     trimConfidence: v.optional(v.number()),
@@ -120,7 +150,8 @@ export const updateState = mutation({
     tempo: v.optional(v.number()),
     dominantKey: v.optional(v.string()),
     durationSec: v.optional(v.number()),
-    songId: v.optional(v.id('songs'))
+    songId: v.optional(v.id('songs')),
+    setId: v.optional(v.id('sets'))
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -137,6 +168,33 @@ export const updateState = mutation({
   }
 });
 
+/**
+ * Classify a recording as a set. Called by the worker after duration check.
+ * Replaces the document with set-specific fields.
+ */
+export const classifyAsSet = mutation({
+  args: {
+    recordingId: v.id('recordings'),
+    durationSec: v.number()
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const recording = await ctx.db.get(args.recordingId);
+    if (!recording) throw new Error('Recording not found');
+
+    // Replace the document: keep common fields, switch to set kind
+    await ctx.db.replace(args.recordingId, {
+      kind: 'set',
+      filename: recording.filename,
+      fileHash: recording.fileHash,
+      uploadedAt: recording.uploadedAt,
+      state: 'normalizing',
+      durationSec: args.durationSec
+    });
+    return null;
+  }
+});
+
 /** Assign a recording to a song. Logs a correction if it was previously assigned. */
 export const assignToSong = mutation({
   args: {
@@ -147,6 +205,8 @@ export const assignToSong = mutation({
   handler: async (ctx, args) => {
     const recording = await ctx.db.get(args.recordingId);
     if (!recording) throw new Error('Recording not found');
+    if (recording.kind !== 'song')
+      throw new Error('Cannot assign a set recording to a song');
 
     // Log correction if reassigning
     if (recording.songId !== undefined || recording.state === 'ungrouped') {
@@ -173,6 +233,7 @@ export const undoTrim = mutation({
   handler: async (ctx, args) => {
     const recording = await ctx.db.get(args.recordingId);
     if (!recording) throw new Error('Recording not found');
+    if (recording.kind !== 'song') throw new Error('Sets do not have trims');
 
     await ctx.db.patch(args.recordingId, {
       savedCutStartSec: recording.cutStartSec,
@@ -192,6 +253,7 @@ export const restoreTrim = mutation({
   handler: async (ctx, args) => {
     const recording = await ctx.db.get(args.recordingId);
     if (!recording) throw new Error('Recording not found');
+    if (recording.kind !== 'song') throw new Error('Sets do not have trims');
     if (
       recording.savedCutStartSec === undefined ||
       recording.savedCutEndSec === undefined
@@ -209,13 +271,15 @@ export const restoreTrim = mutation({
   }
 });
 
-/** Schedule a single recording for reprocessing. */
+/** Schedule a single song recording for reprocessing. */
 export const scheduleReprocess = mutation({
   args: { recordingId: v.id('recordings') },
   returns: v.null(),
   handler: async (ctx, args) => {
     const recording = await ctx.db.get(args.recordingId);
     if (!recording) throw new Error('Recording not found');
+    if (recording.kind !== 'song')
+      throw new Error('Sets cannot be reprocessed through the song pipeline');
     if (!recording.pathFlac) throw new Error('No FLAC file — cannot reprocess');
 
     // Delete existing riffs for this recording (will be re-extracted)

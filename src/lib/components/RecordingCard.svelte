@@ -3,6 +3,7 @@
   import ProcessingBadge from './ProcessingBadge.svelte';
   import TrimReview from './TrimReview.svelte';
   import type { Doc } from '$convex/_generated/dataModel';
+  import type { SongRecording } from '$lib/types';
 
   let {
     recording,
@@ -14,7 +15,7 @@
     oncreatesong,
     onmove
   }: {
-    recording: Doc<'recordings'>;
+    recording: SongRecording;
     index?: number;
     showAssign?: boolean;
     showMove?: boolean;

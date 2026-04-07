@@ -5,6 +5,7 @@
   import RecordingCard from '$lib/components/RecordingCard.svelte';
   import ProcessingBanner from '$lib/components/ProcessingBanner.svelte';
   import type { Id } from '$convex/_generated/dataModel';
+  import type { SongRecording } from '$lib/types';
 
   const client = useConvexClient();
 
@@ -13,7 +14,11 @@
   const processingQuery = useQuery(api.recordings.listProcessing);
 
   const songs = $derived(songsQuery.data ?? []);
-  const ungrouped = $derived(ungroupedQuery.data ?? []);
+  const ungrouped = $derived(
+    (ungroupedQuery.data ?? []).filter(
+      (r): r is SongRecording => r.kind === 'song'
+    )
+  );
   const processing = $derived(processingQuery.data ?? []);
 
   const songsOnly = $derived(
@@ -62,7 +67,12 @@
         </h2>
         <div class="flex flex-col gap-3">
           {#each songs as song (song._id)}
-            <SongGroup {song} recordings={song.recordings} />
+            <SongGroup
+              {song}
+              recordings={song.recordings.filter(
+                (r): r is SongRecording => r.kind === 'song'
+              )}
+            />
           {/each}
         </div>
       </section>

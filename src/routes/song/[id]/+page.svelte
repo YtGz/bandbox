@@ -5,6 +5,7 @@
   import { api } from '$convex/_generated/api';
   import RecordingCard from '$lib/components/RecordingCard.svelte';
   import type { Id } from '$convex/_generated/dataModel';
+  import type { SongRecording } from '$lib/types';
 
   const client = useConvexClient();
   const songId = $derived(page.params.id as Id<'songs'>);
@@ -176,7 +177,7 @@
         {song.recordings.length} take{song.recordings.length === 1 ? '' : 's'}
       </h2>
       <div class="flex flex-col gap-3">
-        {#each song.recordings as recording, i (recording._id)}
+        {#each song.recordings.filter((r): r is SongRecording => r.kind === 'song') as recording, i (recording._id)}
           <RecordingCard
             {recording}
             index={i}

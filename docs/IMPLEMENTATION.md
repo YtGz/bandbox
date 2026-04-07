@@ -39,28 +39,71 @@ A single Docker volume (`audio_data`) is mounted by both SvelteKit and the Pytho
 - `notes` — optional free-text, may contain LLM reasoning or band notes
 - `createdAt` — timestamp
 
+### `sets` table
+
+Stores metadata for set recordings (full rehearsal run-throughs, multi-song recordings).
+
+- `title` — auto-generated from date (e.g., "April 7, 2026"), editable
+- `notes` — optional free-text
+- `recordedAt` — timestamp of when the set was recorded (used for date grouping and ordering)
+- `createdAt` — timestamp
+
+Index: `by_recorded_at` (date-ordered listing)
+
+### `setMarkers` table
+
+Timestamped markers within a set recording, linking to recognized songs. Empty in v1 — the data model is ready for future auto-detection once the fingerprint library is rich enough.
+
+- `setId` — reference to parent set
+- `songId` — optional reference to a matched song
+- `label` — display name (matched song title, or manual label like "Doom Riff")
+- `startSec` — timestamp within the set recording
+- `endSec` — optional end timestamp
+- `confidence` — 0–1 if auto-detected, null if manual
+- `source` — `"manual"` or `"auto"`
+
+Index: `by_set`
+
 ### `recordings` table
 
+Uses a discriminated union on the `kind` field. A recording is either a **song recording** (single song/riff take, goes through the full analysis pipeline) or a **set recording** (multi-song run-through, normalized and encoded only).
+
+#### Common fields (both kinds)
+
+- `kind` — `"song"` or `"set"` (discriminator)
 - `filename` — original filename from the USB stick
 - `fileHash` — SHA-256, used for deduplication
 - `uploadedAt` — timestamp
-- `state` — one of: `uploading`, `normalizing`, `trimming`, `analyzing`, `grouped`, `ungrouped`
-- `songId` — optional reference to a song
+- `state` — processing state (see below)
 - `pathFlac` — relative path to the full normalized FLAC file
+- `durationSec` — total duration in seconds
+- `processingFlags` — optional array of processing flags
+
+#### Song recording fields (`kind: "song"`)
+
+- `state` — one of: `uploading`, `normalizing`, `trimming`, `analyzing`, `grouped`, `ungrouped`, `reprocess`
+- `songId` — optional reference to a song
 - `pathSong` — relative path to the trimmed song segment (Opus)
 - `pathPre` — relative path to the pre-song segment (Opus)
 - `pathPost` — relative path to the post-song segment (Opus)
 - `cutStartSec` — where the trim begins (seconds into the original)
 - `cutEndSec` — where the trim ends
+- `savedCutStartSec` — stored original cut start for trim undo/restore
+- `savedCutEndSec` — stored original cut end for trim undo/restore
 - `trimConfidence` — 0–1 score indicating how confident the trim detection was
 - `trimMethod` — which detection method triggered (energy wall, rhythmic regularity, pitched content)
 - `transcriptPre` — Whisper transcription of the pre-song segment
 - `transcriptPost` — Whisper transcription of the post-song segment
 - `tempo` — detected BPM
 - `dominantKey` — detected key
-- `durationSec` — duration of the trimmed song portion
 
-Indexes: `by_hash` (deduplication), `by_state` (query processing queue), `by_song` (list takes per song)
+#### Set recording fields (`kind: "set"`)
+
+- `state` — one of: `uploading`, `normalizing`, `ready`
+- `setId` — optional reference to a set
+- `pathOpus` — relative path to the full Opus encode (no trimming)
+
+Indexes: `by_hash` (deduplication), `by_kind_and_state` (query processing queue, scoped by kind), `by_song` (list takes per song), `by_set` (list recordings per set)
 
 ### `riffs` table
 
@@ -116,12 +159,12 @@ Caddy routes `/pocket-id/*` to the Pocket-ID container. After first boot, create
 
 ### Protected Routes
 
-| Path | Auth method |
-| --- | --- |
-| `/api/upload` | API key (Pi) — Caddy routes directly to SvelteKit, bypassing oauth2-proxy |
-| `/pocket-id/*` | Public — the OIDC provider itself |
-| `/oauth2/*` | oauth2-proxy endpoints (callback, sign-out) |
-| Everything else | oauth2-proxy → Pocket-ID passkey login |
+| Path            | Auth method                                                               |
+| --------------- | ------------------------------------------------------------------------- |
+| `/api/upload`   | API key (Pi) — Caddy routes directly to SvelteKit, bypassing oauth2-proxy |
+| `/pocket-id/*`  | Public — the OIDC provider itself                                         |
+| `/oauth2/*`     | oauth2-proxy endpoints (callback, sign-out)                               |
+| Everything else | oauth2-proxy → Pocket-ID passkey login                                    |
 
 ---
 
@@ -130,17 +173,18 @@ Caddy routes `/pocket-id/*` to the Pocket-ID container. After first boot, create
 ### Page Structure
 
 ```
-/ Dashboard (all songs + unsorted)
+/ Dashboard (all songs + unsorted + sets)
 /song/{id} Song detail (all takes)
+/set/{id} Set detail (all recordings for a set)
 /recording/{id} Recording detail (trim review, riff map)
 /callback OIDC callback handler
 ```
 
 ### Dashboard (`/`)
 
-The main view. Three sections, top to bottom:
+The main view. Four sections, top to bottom:
 
-**Processing banner** — only visible when recordings are being processed. Shows a pulsing animation and text like "Analyzing... 3 of 8 recordings remaining". Disappears automatically when all recordings reach `grouped` or `ungrouped` state. This is reactive — driven by a Convex subscription to a query that filters recordings by processing states.
+**Processing banner** — only visible when recordings are being processed. Shows a pulsing animation and text like "Analyzing... 3 of 8 recordings remaining". Disappears automatically when all recordings reach a terminal state (`grouped`, `ungrouped`, or `ready`). This is reactive — driven by a Convex subscription to a query that filters recordings by processing states.
 
 **Song groups** — each song is a collapsible card showing:
 
@@ -149,6 +193,13 @@ The main view. Three sections, top to bottom:
 - Inline audio player for the most recent take's `_song.opus`
 - Expand to see all takes as a list
 
+**Sets section** — set recordings grouped by date. Each date heading shows the recordings from that day:
+
+- If one set that day: just the date as heading (e.g., "April 7, 2026"), with editable title
+- If multiple sets that day: "April 7, 2026 — Set 1", "Set 2", etc., ordered by timestamp
+- Each set card shows: title, duration, inline audio player for the full Opus encode
+- Clicking a set opens the set detail page
+
 **Unsorted section** — appears at the bottom when recordings exist in `ungrouped` state. Each unsorted recording shows:
 
 - Original filename
@@ -156,7 +207,7 @@ The main view. Three sections, top to bottom:
 - If analysis complete but unmatched: an "Assign to song" dropdown listing all existing songs plus a "Create new song" option
 - Inline audio player
 
-All three sections update in real time via Convex subscriptions. When the Python worker groups a recording, it moves from "Unsorted" into its song group without the user doing anything.
+All four sections update in real time via Convex subscriptions. When the Python worker groups a recording, it moves from "Unsorted" into its song group without the user doing anything. Set recordings appear in the Sets section as soon as they reach `ready` state.
 
 ### Song Page (`/song/{id}`)
 
@@ -180,6 +231,24 @@ Each take is a card containing:
 - **Trim review controls** (see Section 5 below)
 - **Actions**: Download FLAC, Move to different song
 
+### Set Page (`/set/{id}`)
+
+Shows all recordings for one set (typically one, but could be multiple if the band recorded the same set twice in a day). Header area:
+
+- Back link to dashboard
+- Set title with inline edit (e.g., "April 7, 2026" → "Pre-show warmup")
+- Notes field (editable)
+
+Each recording is a card containing:
+
+- **Audio player** — plays the full Opus encode
+- **Duration** — total length
+- **Download FLAC** button
+
+**Song markers (v2)** — when `setMarkers` are present, the audio player shows clickable timestamp markers on the seek bar. Each marker displays the matched song title (or manual label). Clicking a marker seeks to that timestamp. Markers with `source: "auto"` show a confidence indicator; markers with `source: "manual"` show a pin icon. A "+" button allows adding manual markers at the current playback position.
+
+In v1, this section is absent — sets are simply playable recordings with no internal structure.
+
 ### Recording Detail (`/recording/{id}`)
 
 A dedicated page (or large modal overlay from the song page) for deep inspection of a single recording. Contains:
@@ -199,6 +268,8 @@ This page is optional for v1. The trim review controls on the song page are more
 - **ProcessingBadge** — small animated indicator showing the current state of a recording. Pulses while active. Shows a checkmark when done.
 - **AssignDropdown** — dropdown menu listing all songs plus "New song". Triggers a Convex mutation to assign the recording.
 - **TrimReview** — the trim review and undo interface described in Section 5.
+- **SetCard** — a set recording on the dashboard or set page. Contains the audio player, duration, title, and download button. Simpler than RecordingCard — no trim controls or riff maps.
+- **SetDateGroup** — groups SetCards under a date heading on the dashboard. Handles the "Set 1, Set 2" numbering when multiple sets share a date.
 
 ---
 
@@ -302,7 +373,22 @@ The worker polls the manifests directory every 5 seconds. When it finds manifest
 
 The worker is the only Python component. It is kept isolated in its own container with its own dependencies managed by uv. It communicates with Convex exclusively through HTTP actions (POST requests to Convex HTTP endpoints, authenticated with a worker API key).
 
-### Processing Steps (per recording)
+### Set Classification
+
+Before any processing, the worker checks the recording's duration. If the raw WAV exceeds the **set threshold** (default: 17 minutes, configurable), the recording is classified as `kind: "set"` and follows the simplified set pipeline. Otherwise it follows the full song pipeline.
+
+The duration check happens on the raw WAV file before normalization — it's a cheap `ffprobe` call.
+
+### Set Pipeline (kind: "set")
+
+1. **Normalize** — loudness normalize to -14 LUFS, encode as FLAC
+2. **Encode** — encode the full recording as a single Opus file (128k). No trimming, no segmentation.
+3. **Assign to set** — find or create a `sets` document for the recording date. If a set already exists for that date, the recording is added to it. Title is auto-generated from the date (e.g., "April 7, 2026").
+4. **Clean up** — delete the original WAV, set state to `ready`
+
+Set recordings skip the entire trim → segment → fingerprint → match pipeline. They exist for playback, not analysis.
+
+### Song Pipeline (kind: "song")
 
 1. **Normalize** — loudness normalize to -14 LUFS, encode as FLAC
 2. **Trim** — detect song start/end using multi-stage detection (energy wall, rhythmic regularity, pitched content). Compute confidence score.
@@ -366,19 +452,31 @@ From the unsorted section, "Create new song" prompts for a title, creates a song
 
 All corrections are logged for future model training.
 
+### Reclassify Recording
+
+If the duration threshold misclassifies a recording (e.g., a 20-minute epic that's actually one song, or a 15-minute set that slipped under the threshold), the user can reclassify it from the UI. This triggers a Convex mutation that changes the `kind` field and either:
+
+- **Song → Set**: clears song-specific fields, creates/assigns a set, sets state to `ready`
+- **Set → Song**: clears set-specific fields, sets state to `reprocess` so the worker picks it up for the full song pipeline
+
+### Rename Set
+
+Inline edit on the set title. Triggers a Convex mutation on the `sets` table.
+
 ---
 
 ## 10. Convex Queries and Mutations
 
 ### Queries (reactive subscriptions)
 
-- **Dashboard query** — returns three lists: song groups with their takes, ungrouped recordings, and currently-processing recordings. The frontend subscribes to this; it updates live as the worker progresses.
+- **Dashboard query** — returns four lists: song groups with their takes, sets grouped by date, ungrouped recordings, and currently-processing recordings. The frontend subscribes to this; it updates live as the worker progresses.
 - **Song detail query** — returns one song with all its takes, ordered by date. Subscribed when viewing a song page.
-- **Processing status query** — returns all recordings in processing states. Used by the processing banner.
+- **Set detail query** — returns one set with all its recordings and any set markers, ordered by timestamp. Subscribed when viewing a set page.
+- **Processing status query** — returns all recordings in processing states (both song and set pipelines). Used by the processing banner.
 
 ### Mutations (triggered by user actions)
 
-- **Create recording** — inserts a new recording, deduplicates by hash
+- **Create recording** — inserts a new recording, deduplicates by hash. The `kind` field is set by the worker after duration classification.
 - **Update state** — patches a recording's state and optional metadata fields (called by the Python worker via HTTP actions)
 - **Assign to song** — sets songId and state, logs correction if reassignment
 - **Create song** — inserts a new song
@@ -387,13 +485,20 @@ All corrections are logged for future model training.
 - **Delete song** — ungroups recordings, deletes song
 - **Store riffs** — batch insert riff documents for a recording
 - **Undo trim** — clears cut points on a recording, stores original values in a separate field for potential restoration
+- **Create set** — inserts a new set with auto-generated title from date
+- **Rename set** — patches set title
+- **Assign to set** — sets setId on a set recording, creates set if needed
+- **Reclassify recording** — changes `kind` between `"song"` and `"set"`, clears/resets fields accordingly
+- **Add set marker** — inserts a manual marker into `setMarkers` (v2)
+- **Remove set marker** — deletes a marker from `setMarkers` (v2)
 
 ### HTTP Actions (called by Python worker)
 
-Two HTTP routes authenticated by a worker API key:
+Three HTTP routes authenticated by a worker API key:
 
 - **Update state** — receives recording ID, new state, and optional metadata. Runs the updateState mutation internally.
 - **Store riffs** — receives recording ID and array of riff data. Runs the storeBatch mutation internally.
+- **Assign to set** — receives recording ID and recording date. Finds or creates a set for that date, assigns the recording. Runs the assignToSet mutation internally.
 
 ---
 
@@ -401,13 +506,13 @@ Two HTTP routes authenticated by a worker API key:
 
 ### Docker Compose Services
 
-| Service | Image/Build | Ports | Volumes |
-| --- | --- | --- | --- |
-| `caddy` | `caddy:2-alpine` | 80, 443 | Caddyfile, caddy_data, caddy_config |
-| `sveltekit` | Built from `./` | 3000 (internal) | audio_data |
-| `python-worker` | Built from `./python-worker` | None | audio_data |
-| `pocket-id` | `stonith404/pocket-id` | 8080 (internal) | pocket_id_data |
-| `oauth2-proxy` | `quay.io/oauth2-proxy/oauth2-proxy:v7` | 4180 (internal) | None |
+| Service         | Image/Build                            | Ports           | Volumes                             |
+| --------------- | -------------------------------------- | --------------- | ----------------------------------- |
+| `caddy`         | `caddy:2-alpine`                       | 80, 443         | Caddyfile, caddy_data, caddy_config |
+| `sveltekit`     | Built from `./`                        | 3000 (internal) | audio_data                          |
+| `python-worker` | Built from `./python-worker`           | None            | audio_data                          |
+| `pocket-id`     | `stonith404/pocket-id`                 | 8080 (internal) | pocket_id_data                      |
+| `oauth2-proxy`  | `quay.io/oauth2-proxy/oauth2-proxy:v7` | 4180 (internal) | None                                |
 
 ### Volumes
 
@@ -430,12 +535,12 @@ Managed via a `.env` file (see `.env.example`):
 
 ### Caddy Routing
 
-| Path | Target | Auth |
-| --- | --- | --- |
-| `/api/upload` | SvelteKit (direct) | API key (Pi) |
-| `/pocket-id/*` | Pocket-ID | Public |
-| `/oauth2/*` | oauth2-proxy | Public (handles login flow) |
-| Everything else | oauth2-proxy `forward_auth` → SvelteKit | Passkey via Pocket-ID |
+| Path            | Target                                  | Auth                        |
+| --------------- | --------------------------------------- | --------------------------- |
+| `/api/upload`   | SvelteKit (direct)                      | API key (Pi)                |
+| `/pocket-id/*`  | Pocket-ID                               | Public                      |
+| `/oauth2/*`     | oauth2-proxy                            | Public (handles login flow) |
+| Everything else | oauth2-proxy `forward_auth` → SvelteKit | Passkey via Pocket-ID       |
 
 ---
 
@@ -447,29 +552,34 @@ Managed via a `.env` file (see `.env.example`):
     manifests/             ← JSON manifests for the Python worker
     {recordingId}.wav      ← raw uploads, deleted after processing
   processed/
-    {recordingId}.flac         ← full normalized lossless (permanent)
-    {recordingId}_pre.opus     ← pre-song segment
-    {recordingId}_song.opus    ← trimmed song
-    {recordingId}_post.opus    ← post-song segment
+    songs/
+      {recordingId}.flac         ← full normalized lossless (permanent)
+      {recordingId}_pre.opus     ← pre-song segment
+      {recordingId}_song.opus    ← trimmed song
+      {recordingId}_post.opus    ← post-song segment
+    sets/
+      {recordingId}.flac         ← full normalized lossless (permanent)
+      {recordingId}.opus         ← full recording in Opus (no trimming)
 ```
 
-The FLAC is never deleted. It serves as the source of truth for re-trimming, full-quality downloads, and future reprocessing. The Opus files are derived artifacts that could be regenerated from the FLAC if needed.
+Song and set recordings are stored in separate subdirectories for clarity. The FLAC is never deleted. It serves as the source of truth for re-trimming, full-quality downloads, and future reprocessing. The Opus files are derived artifacts that could be regenerated from the FLAC if needed.
 
 ---
 
 ## 13. Implementation Phases
 
-| Phase  | Deliverable                                                          | What it enables                                                   |
-| ------ | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **1**  | Docker Compose with Caddy, SvelteKit, Pocket-ID, oauth2-proxy       | Working auth flow, empty dashboard                                |
-| **2**  | Convex schema, basic queries/mutations                               | Data layer ready                                                  |
-| **3**  | Upload endpoint, Pi integration                                      | Files arrive on the server                                        |
-| **4**  | Dashboard page with song groups, unsorted section, audio player      | Browse and play recordings (manually added to Convex for testing) |
-| **5**  | Python worker: normalize → trim → encode                             | Processed audio files appear, state updates flow to frontend      |
-| **6**  | Trim review and undo UI                                              | Users can audit and correct trim decisions                        |
-| **7**  | Python worker: feature extraction, riff fingerprinting, DTW matching | Riff data populates in Convex                                     |
-| **8**  | LLM grouping, song creation, auto-assignment                         | Recordings sort themselves into songs                             |
-| **9**  | Manual corrections: reassign, rename, merge, dissolve                | Users can fix grouping errors                                     |
-| **10** | Pi upload script update for new endpoint                             | Full end-to-end flow from practice to webapp                      |
+| Phase  | Deliverable                                                                | What it enables                                                   |
+| ------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **1**  | Docker Compose with Caddy, SvelteKit, Pocket-ID, oauth2-proxy              | Working auth flow, empty dashboard                                |
+| **2**  | Convex schema, basic queries/mutations                                     | Data layer ready                                                  |
+| **3**  | Upload endpoint, Pi integration                                            | Files arrive on the server                                        |
+| **4**  | Dashboard page with song groups, sets section, unsorted, audio player      | Browse and play recordings (manually added to Convex for testing) |
+| **5**  | Python worker: classify → normalize → trim → encode (song + set pipelines) | Processed audio files appear, sets auto-grouped by date           |
+| **6**  | Trim review and undo UI                                                    | Users can audit and correct trim decisions                        |
+| **7**  | Python worker: feature extraction, riff fingerprinting, DTW matching       | Riff data populates in Convex                                     |
+| **8**  | LLM grouping, song creation, auto-assignment                               | Recordings sort themselves into songs                             |
+| **9**  | Manual corrections: reassign, rename, merge, dissolve, reclassify          | Users can fix grouping errors and song/set misclassification      |
+| **10** | Pi upload script update for new endpoint                                   | Full end-to-end flow from practice to webapp                      |
+| **11** | Set marker UI + auto-detection from fingerprint library (v2)               | Timestamped song navigation within set recordings                 |
 
-**Phases 1–4** produce a usable app for uploading and listening. **Phases 5–6** add automated processing with trim review. **Phases 7–8** add the intelligence. **Phase 9** adds the human-in-the-loop corrections. **Phase 10** closes the loop with the Pi.
+**Phases 1–4** produce a usable app for uploading and listening. **Phase 5** adds automated processing with set classification. **Phase 6** adds trim review. **Phases 7–8** add the intelligence. **Phase 9** adds the human-in-the-loop corrections. **Phase 10** closes the loop with the Pi. **Phase 11** is a future enhancement once the fingerprint library is mature.

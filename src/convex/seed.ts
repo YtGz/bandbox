@@ -9,6 +9,8 @@ export const run = mutation({
     // Clear existing data
     for (const table of [
       'songs',
+      'sets',
+      'setMarkers',
       'recordings',
       'riffs',
       'riffMatches',
@@ -45,6 +47,7 @@ export const run = mutation({
 
     // --- Recordings for Carrion Throne ---
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0042.wav',
       fileHash:
         'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
@@ -66,6 +69,7 @@ export const run = mutation({
     });
 
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0043.wav',
       fileHash:
         'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
@@ -85,6 +89,7 @@ export const run = mutation({
     });
 
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0051.wav',
       fileHash:
         'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
@@ -106,6 +111,7 @@ export const run = mutation({
 
     // --- Recordings for Void Tremor ---
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0044.wav',
       fileHash:
         'd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
@@ -127,6 +133,7 @@ export const run = mutation({
     });
 
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0052.wav',
       fileHash:
         'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
@@ -146,6 +153,7 @@ export const run = mutation({
 
     // --- Recording for Ossuary ---
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0053.wav',
       fileHash:
         'f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1',
@@ -167,6 +175,7 @@ export const run = mutation({
 
     // --- Ungrouped recordings ---
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0054.wav',
       fileHash:
         'a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8',
@@ -186,6 +195,7 @@ export const run = mutation({
     });
 
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0055.wav',
       fileHash:
         'b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9',
@@ -204,6 +214,7 @@ export const run = mutation({
 
     // --- Currently processing ---
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0060.wav',
       fileHash:
         'c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0',
@@ -212,11 +223,38 @@ export const run = mutation({
     });
 
     await ctx.db.insert('recordings', {
+      kind: 'song',
       filename: 'ZOOM0061.wav',
       fileHash:
         'd0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1',
       uploadedAt: now,
       state: 'normalizing'
+    });
+
+    // --- Sets ---
+    const setDate = now - 7 * day;
+    const rehearsalSet = await ctx.db.insert('sets', {
+      title: new Date(setDate).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC'
+      }),
+      recordedAt: setDate,
+      createdAt: setDate
+    });
+
+    await ctx.db.insert('recordings', {
+      kind: 'set',
+      filename: 'ZOOM0050.wav',
+      fileHash:
+        'e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2',
+      uploadedAt: setDate,
+      state: 'ready',
+      setId: rehearsalSet,
+      pathFlac: 'sets/set_rehearsal1.flac',
+      pathOpus: 'sets/set_rehearsal1.opus',
+      durationSec: 2340
     });
 
     return null;

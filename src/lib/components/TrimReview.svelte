@@ -2,9 +2,9 @@
   import { useConvexClient } from 'convex-svelte';
   import { api } from '$convex/_generated/api';
   import AudioPlayer from './AudioPlayer.svelte';
-  import type { Doc } from '$convex/_generated/dataModel';
+  import type { SongRecording } from '$lib/types';
 
-  let { recording }: { recording: Doc<'recordings'> } = $props();
+  let { recording }: { recording: SongRecording } = $props();
 
   const client = useConvexClient();
 

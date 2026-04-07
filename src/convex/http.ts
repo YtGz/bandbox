@@ -176,6 +176,50 @@ http.route({
   })
 });
 
+/** POST /worker/classifyAsSet — reclassify a recording as a set after duration check. */
+http.route({
+  path: '/worker/classifyAsSet',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { recordingId, durationSec } = await request.json();
+    await ctx.runMutation(api.recordings.classifyAsSet, {
+      recordingId,
+      durationSec
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
+/** POST /worker/assignToSet — find or create a set for the date, assign recording. */
+http.route({
+  path: '/worker/assignToSet',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const { recordingId, recordedAt } = await request.json();
+    const setId = await ctx.runMutation(api.sets.findOrCreate, {
+      recordedAt
+    });
+    await ctx.runMutation(api.recordings.updateState, {
+      recordingId,
+      state: 'ready',
+      setId
+    });
+    return new Response(JSON.stringify({ ok: true, setId }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
 /** POST /worker/setProcessingFlags — set quality degradation flags on a recording. */
 http.route({
   path: '/worker/setProcessingFlags',
@@ -187,11 +231,11 @@ http.route({
     const { recordingId, flags } = await request.json();
     await ctx.runMutation(api.recordings.setProcessingFlags, {
       recordingId,
-      flags,
+      flags
     });
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }
     });
   })
 });
@@ -205,11 +249,12 @@ http.route({
       return new Response('Unauthorized', { status: 401 });
     }
     const recordings = await ctx.runQuery(api.recordings.listByState, {
-      state: 'reprocess',
+      kind: 'song',
+      state: 'reprocess'
     });
     return new Response(JSON.stringify({ recordings }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }
     });
   })
 });
@@ -224,24 +269,21 @@ http.route({
     }
     const { key, message } = await request.json();
     // Upsert: find existing warning by key, update or create
-    const existing = await ctx.runQuery(
-      api.systemWarnings.getByKey,
-      { key }
-    );
+    const existing = await ctx.runQuery(api.systemWarnings.getByKey, { key });
     if (existing) {
       await ctx.runMutation(api.systemWarnings.update, {
         id: existing._id,
-        message,
+        message
       });
     } else {
       await ctx.runMutation(api.systemWarnings.create, {
         key,
-        message,
+        message
       });
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }
     });
   })
 });

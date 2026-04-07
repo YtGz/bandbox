@@ -2,13 +2,14 @@
   import RecordingCard from './RecordingCard.svelte';
   import AudioPlayer from './AudioPlayer.svelte';
   import type { Doc } from '$convex/_generated/dataModel';
+  import type { SongRecording } from '$lib/types';
 
   let {
     song,
     recordings
   }: {
     song: Doc<'songs'>;
-    recordings: Doc<'recordings'>[];
+    recordings: SongRecording[];
   } = $props();
 
   let expanded = $state(false);
