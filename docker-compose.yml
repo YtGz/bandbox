@@ -9,12 +9,14 @@
 #   caddy, pocket-id
 #
 # Usage:
-#   # Bring-your-own Caddy + Pocket-ID (point your existing
-#   # reverse proxy and OIDC provider at these services):
+#   # Bring-your-own reverse proxy + OIDC provider:
 #   docker compose up -d
+#   # → oauth2-proxy listens on host port 4180 (configurable via OAUTH2_PROXY_PORT)
+#   # → point your reverse proxy at localhost:4180
 #
 #   # Standalone — includes Caddy and Pocket-ID:
 #   docker compose --profile standalone up -d
+#   # → Caddy binds 80/443 directly
 #
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -107,8 +109,8 @@ services:
       # Misc
       - --reverse-proxy=true
       - --skip-provider-button=true
-    expose:
-      - '4180'
+    ports:
+      - '${OAUTH2_PROXY_PORT:-4180}:4180'
 
 volumes:
   audio_data:
