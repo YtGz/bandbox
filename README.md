@@ -110,11 +110,21 @@ openssl rand -base64 32
 
 ### 2. Launch
 
+**Standalone** (includes Caddy + Pocket-ID):
+```bash
+docker compose --profile standalone up -d
+```
+
+**Bring-your-own** (you already have a reverse proxy and/or OIDC provider):
 ```bash
 docker compose up -d
+# Set OIDC_ISSUER_URL in .env to your existing OIDC provider
+# Point your reverse proxy at sveltekit:3000 and oauth2-proxy:4180
 ```
 
 ### 3. Set up authentication
+
+**If using the bundled Pocket-ID** (standalone profile):
 
 Open `https://your-domain/pocket-id` and create your admin account (passkey). Then:
 
@@ -123,9 +133,15 @@ Open `https://your-domain/pocket-id` and create your admin account (passkey). Th
 3. Copy the **Client ID** and **Client Secret** into `.env`
 4. `docker compose restart oauth2-proxy`
 
+**If using an existing OIDC provider:**
+
+1. Create an OIDC client with redirect URI `https://your-domain/oauth2/callback`
+2. Set `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` in `.env`
+3. `docker compose restart oauth2-proxy`
+
 ### 4. Invite the band
 
-Each member opens `https://your-domain/pocket-id` and registers a passkey. No passwords — just biometrics or a hardware key. Done.
+Each member registers in your OIDC provider (passkey, password, SSO — whatever it supports). BandBox doesn't need per-user features; the only question is "are you in the band?"
 
 ### 5. Set up the Pi
 

@@ -504,43 +504,61 @@ Three HTTP routes authenticated by a worker API key:
 
 ## 11. Deployment
 
+BandBox supports two deployment modes via Docker Compose profiles:
+
+**Standalone** — includes everything (Caddy reverse proxy + Pocket-ID for auth):
+```bash
+docker compose --profile standalone up -d
+```
+
+**Bring-your-own infrastructure** — only the core services (you provide your own reverse proxy and OIDC provider):
+```bash
+docker compose up -d
+```
+
+This is useful when you already have Caddy (or nginx/Traefik) running on the host, and/or an existing Pocket-ID (or Keycloak/Authentik) instance with users you want to keep.
+
 ### Docker Compose Services
 
-| Service         | Image/Build                            | Ports           | Volumes                             |
-| --------------- | -------------------------------------- | --------------- | ----------------------------------- |
-| `caddy`         | `caddy:2-alpine`                       | 80, 443         | Caddyfile, caddy_data, caddy_config |
-| `sveltekit`     | Built from `./`                        | 3000 (internal) | audio_data                          |
-| `python-worker` | Built from `./python-worker`           | None            | audio_data                          |
-| `pocket-id`     | `stonith404/pocket-id`                 | 8080 (internal) | pocket_id_data                      |
-| `oauth2-proxy`  | `quay.io/oauth2-proxy/oauth2-proxy:v7` | 4180 (internal) | None                                |
+| Service | Profile | Image/Build | Ports | Volumes |
+|---|---|---|---|---|
+| `sveltekit` | *core* | Built from `./` | 3000 (internal) | audio_data |
+| `python-worker` | *core* | Built from `./python-worker` | None | audio_data |
+| `oauth2-proxy` | *core* | `oauth2-proxy:v7` | 4180 (internal) | None |
+| `caddy` | `standalone` | `caddy:2-alpine` | 80, 443 | Caddyfile, caddy_data, caddy_config |
+| `pocket-id` | `standalone` | `stonith404/pocket-id` | 8080 (internal) | pocket_id_data |
 
 ### Volumes
 
 - `audio_data` — shared between SvelteKit and Python worker. Contains incoming and processed audio files.
-- `caddy_data` — Caddy's TLS certificates and state
-- `caddy_config` — Caddy's runtime configuration
-- `pocket_id_data` — Pocket-ID's database and configuration
+- `caddy_data` — Caddy's TLS certificates and state (standalone only)
+- `caddy_config` — Caddy's runtime configuration (standalone only)
+- `pocket_id_data` — Pocket-ID's database and configuration (standalone only)
 
 ### Environment Variables
 
 Managed via a `.env` file (see `.env.example`):
 
-- `DOMAIN` — public domain for Caddy auto-HTTPS
+- `DOMAIN` — public domain for the deployment
 - `CONVEX_URL` / `PUBLIC_CONVEX_URL` — Convex deployment URLs
 - `PI_API_KEY` — shared secret for Pi uploads
 - `WORKER_API_KEY` — shared secret for Python worker → Convex HTTP actions
-- `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` — Pocket-ID OIDC client credentials (for oauth2-proxy)
+- `OIDC_ISSUER_URL` — OIDC issuer URL (defaults to bundled Pocket-ID; set when using an external provider)
+- `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` — OIDC client credentials (for oauth2-proxy)
 - `COOKIE_SECRET` — 32-byte base64 string for oauth2-proxy cookie encryption
 - `LLM_API_KEY` / `LLM_BASE_URL` — for the grouping LLM
 
-### Caddy Routing
+### Reverse Proxy Routing
 
-| Path            | Target                                  | Auth                        |
-| --------------- | --------------------------------------- | --------------------------- |
-| `/api/upload`   | SvelteKit (direct)                      | API key (Pi)                |
-| `/pocket-id/*`  | Pocket-ID                               | Public                      |
-| `/oauth2/*`     | oauth2-proxy                            | Public (handles login flow) |
-| Everything else | oauth2-proxy `forward_auth` → SvelteKit | Passkey via Pocket-ID       |
+When using the bundled Caddy (standalone profile), routing is handled by the `Caddyfile`. When bringing your own reverse proxy, configure equivalent routes:
+
+| Path | Target | Auth |
+|---|---|---|
+| `/api/upload` | SvelteKit (:3000) | API key (Pi) — bypass auth gate |
+| `/oauth2/*` | oauth2-proxy (:4180) | Public (handles login flow) |
+| Everything else | `forward_auth` to oauth2-proxy (:4180), then SvelteKit (:3000) | OIDC via oauth2-proxy |
+
+If using the standalone profile, Caddy also routes `/pocket-id/*` to the bundled Pocket-ID instance.
 
 ---
 

@@ -1,6 +1,27 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BandBox Docker Compose
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# Core services (always started):
+#   sveltekit, python-worker, oauth2-proxy
+#
+# Optional services (profile: standalone):
+#   caddy, pocket-id
+#
+# Usage:
+#   # Bring-your-own Caddy + Pocket-ID (point your existing
+#   # reverse proxy and OIDC provider at these services):
+#   docker compose up -d
+#
+#   # Standalone — includes Caddy and Pocket-ID:
+#   docker compose --profile standalone up -d
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 services:
-  # ── Reverse Proxy ─────────────────────────────────────────
+  # ── Reverse Proxy (optional — use your own) ──────────────
   caddy:
+    profiles: [standalone]
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
@@ -46,8 +67,9 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL}
       AUDIO_DATA_PATH: /data/audio
 
-  # ── Pocket-ID (OIDC Provider) ─────────────────────────────
+  # ── Pocket-ID (optional — use your own OIDC provider) ────
   pocket-id:
+    profiles: [standalone]
     image: stonith404/pocket-id
     restart: unless-stopped
     volumes:
@@ -64,9 +86,9 @@ services:
     restart: unless-stopped
     command:
       - --http-address=0.0.0.0:4180
-      # OIDC provider (Pocket-ID)
+      # OIDC provider (Pocket-ID or any OIDC-compatible provider)
       - --provider=oidc
-      - --oidc-issuer-url=https://${DOMAIN}/pocket-id/oidc
+      - --oidc-issuer-url=${OIDC_ISSUER_URL:-https://${DOMAIN}/pocket-id/oidc}
       - --client-id=${OIDC_CLIENT_ID}
       - --client-secret=${OIDC_CLIENT_SECRET}
       # Cookie
@@ -76,17 +98,15 @@ services:
       - --cookie-expire=720h
       # Redirect
       - --redirect-url=https://${DOMAIN}/oauth2/callback
-      # Allow all authenticated users (Pocket-ID controls who can register)
+      # Allow all authenticated users (OIDC provider controls who can register)
       - --email-domain=*
-      # Upstream is handled by Caddy's forward_auth, not oauth2-proxy
+      # Upstream is handled by the reverse proxy's forward_auth, not oauth2-proxy
       - --upstream=static://202
       # Misc
       - --reverse-proxy=true
       - --skip-provider-button=true
     expose:
       - '4180'
-    depends_on:
-      - pocket-id
 
 volumes:
   audio_data:
