@@ -48,6 +48,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_BASE_URL: ${LLM_BASE_URL}
       AUDIO_DATA_PATH: /data/audio
+      POLL_INTERVAL: ${POLL_INTERVAL:-30}
 
   # ── oauth2-proxy (Auth Gate) ──────────────────────────────
   oauth2-proxy:

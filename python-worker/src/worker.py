@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("bandbox-worker")
 
-POLL_INTERVAL = 5  # seconds
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))  # seconds
 
 
 def get_audio_path() -> str:
