@@ -47,20 +47,25 @@ Raspberry Pi ─────┼── Wi-Fi ─┤── /pocket-id/* ──→ 
 
 ## 🧠 Audio Intelligence
 
-Standard music analysis chokes on heavy distortion. BandBox uses features that survive it.
+Standard music analysis chokes on heavy distortion, blast beats, and alternate tunings. BandBox uses features that survive all three. For the full deep dive, see **[Audio Analysis](docs/AUDIO_ANALYSIS.md)**.
 
-**Riff Segmentation** — agglomerative clustering on chroma features. Finds structural boundaries, merges short segments (<3s), splits long ones (>60s).
+**HPSS Preprocessing** — every recording is split into harmonic (guitar, bass, vocals) and percussive (drums, transients) layers via Harmonic-Percussive Source Separation. This single step dramatically improves both pitch and rhythm extraction.
 
-**Fingerprinting** — four features per riff, weighted by reliability:
+**Riff Segmentation** — novelty detection on a self-similarity matrix built from spectral contrast and onset strength. A checkerboard kernel slides along the diagonal to find structural boundaries, merging short segments (<3s) and splitting long ones (>60s).
 
-| Feature | Weight | What it captures |
-| --- | ---: | --- |
-| 🥁 **Groove** | 35% | Rhythmic pattern via inter-onset intervals — instrument-agnostic |
-| 🎯 **Drums** | 25% | Kick/snare patterns via low-frequency autocorrelation — most consistent across takes |
-| 🎵 **Contour** | 25% | Spectral centroid as pitch proxy (pYIN fails on distortion) — 10 pts/sec for DTW |
-| 🎸 **Spectral contrast** | 15% | Tonal character per frequency band — captures the distortion signature |
+**Fingerprinting** — five features per riff, weighted adaptively based on riff type:
 
-**Matching** — DTW on contours, cosine similarity on the rest. Tempo penalty >15% BPM difference (catches "same riff, different tempo" without over-penalizing natural drift).
+| Feature | Blast/Tremolo | Groove/Breakdown | What it captures |
+| --- | ---: | ---: | --- |
+| 🎵 **Contour** | **55%** | 15% | Melodic shape via a three-method cascade (spectral centroid → rolloff → pYIN), normalized for tuning independence |
+| 🥁 **Groove** | 10% | **35%** | Beat-aligned 16-slot onset pattern — captures rhythmic identity |
+| 🎯 **Drums** | 10% | **20%** | Kick/snare patterns from the percussive layer — most consistent across takes |
+| 🎸 **Spectral** | 5% | 10% | Tonal character per frequency band — captures the distortion signature |
+| ⏱️ **Tempo** | 20% | 20% | BPM with double/half tempo detection — catches tracker ambiguity |
+
+Weights shift automatically by measuring onset uniformity: uniform onsets (blast beats, tremolo) lean on contour; sparse onsets (grooves, breakdowns) lean on rhythm.
+
+**Matching** — DTW with open begin/end on 200-point normalized contours (handles partial takes and tempo variation), cosine similarity on rhythm features. Double/half tempo detection ensures a riff tracked at 100 BPM still matches one tracked at 200 BPM.
 
 ## 📦 Data Lifecycle
 
