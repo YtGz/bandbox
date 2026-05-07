@@ -336,15 +336,39 @@ uv sync
 
 ### Install PiSugar power manager
 
+The official `pisugar-power-manager.sh` installer only supports Debian/RPM and aborts on Arch Linux ARM. Instead, use the prebuilt aarch64-musl tarball from the [pisugar-power-manager-rs releases](https://github.com/PiSugar/pisugar-power-manager-rs/releases) — it ships a distro-agnostic `install.sh` that just drops binaries, configs, and systemd units in place.
+
+First, enable I2C (required for the PiSugar 3 to talk to the Pi):
+
 ```bash
-curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash
+echo "dtparam=i2c_arm=on" | sudo tee -a /boot/config.txt
+echo "i2c-dev" | sudo tee /etc/modules-load.d/i2c.conf
 ```
 
-Verify it's running:
+Then download and run the bundled installer with model `PiSugar 3`:
 
 ```bash
+cd /tmp
+VERSION=$(curl -fsSL https://api.github.com/repos/PiSugar/pisugar-power-manager-rs/releases/latest \
+  | grep -Po '"tag_name":\s*"\K[^"]+')
+curl -fLO "https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/${VERSION}/pisugar_aarch64-unknown-linux-musl.tar.gz"
+tar -xf pisugar_aarch64-unknown-linux-musl.tar.gz
+cd aarch64-unknown-linux-musl
+sudo bash install.sh -m 'PiSugar 3' server poweroff
+```
+
+> Skip `programmer` — the bundled `install.sh` has a bug that looks for the programmer binary in `target/release/`, which doesn't exist in the release tarball. We don't need it anyway.
+
+Reboot to load the I2C kernel module and the dtparam, then enable + start the services:
+
+```bash
+sudo reboot
+# after reconnect:
+sudo systemctl enable --now pisugar-server pisugar-poweroff
 sudo systemctl status pisugar-server
 ```
+
+Verify the battery is detected: `curl http://localhost:8421/exec?cmd=get%20battery` (after logging in via the web UI to get a token — see [PiSugar HTTP API](https://github.com/PiSugar/pisugar-power-manager-rs#http-api)). Default web UI credentials are `admin/admin` — change them at `http://<pi-ip>:8421`.
 
 ### Configure server connection
 
