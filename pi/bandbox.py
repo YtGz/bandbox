@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
  ╔═══════════════════════════════════════╗
- ║           ♪ BandBox v1.0 ♪           ║
+ ║          ♪ BandBox v0.1.0 ♪          ║
  ║   Band practice recording uploader   ║
  ║   Pi Zero 2W + PiSugar 3 + E-ink    ║
  ╚═══════════════════════════════════════╝

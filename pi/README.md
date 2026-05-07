@@ -414,7 +414,7 @@ sudo systemctl status bandbox
 journalctl -u bandbox -f
 ```
 
-You should see the e-ink display wake up with "BandBox v1.0" and a happy face.
+You should see the e-ink display wake up with "BandBox v0.1.0" and a happy face.
 
 ## Step 4: Configure Wi-Fi Networks
 
