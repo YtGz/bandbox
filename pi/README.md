@@ -354,10 +354,11 @@ VERSION=$(curl -fsSL https://api.github.com/repos/PiSugar/pisugar-power-manager-
 curl -fLO "https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/${VERSION}/pisugar_aarch64-unknown-linux-musl.tar.gz"
 tar -xf pisugar_aarch64-unknown-linux-musl.tar.gz
 cd aarch64-unknown-linux-musl
-sudo bash install.sh -m 'PiSugar 3' server poweroff
+sudo bash install.sh -m 'PiSugar 3' server
+sudo bash install.sh -m 'PiSugar 3' poweroff
 ```
 
-> Skip `programmer` — the bundled `install.sh` has a bug that looks for the programmer binary in `target/release/`, which doesn't exist in the release tarball. We don't need it anyway.
+> The bundled `install.sh` only accepts **one** positional arg (e.g. `server`, `poweroff`, or `all`) — passing two silently installs only the first. Don't use `all` either: it pulls in `programmer`, which has a broken path (`target/release/pisugar-programmer`) that doesn't exist in the release tarball, causing the script to abort midway.
 
 Reboot to load the I2C kernel module and the dtparam, then enable + start the services:
 
