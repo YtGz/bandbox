@@ -101,6 +101,8 @@ Name=wlan0
 
 [Network]
 DHCP=yes
+MulticastDNS=yes
+LLMNR=yes
 
 [DHCPv4]
 RouteMetric=20
@@ -146,6 +148,8 @@ echo 'options brcmfmac roamoff=1 feature_disable=0x82000' | \
 ```
 
 > **Set your country code** in `wpa_supplicant-wlan0.conf` — without it, the Wi-Fi radio may stay disabled. Use your [ISO 3166-1 alpha-2 code](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2) (e.g. `US`, `DE`, `GB`).
+
+> **Why `MulticastDNS=yes` and `LLMNR=yes`?** These let `systemd-resolved` publish the Pi's hostname over mDNS (Apple/Linux) and LLMNR (Windows), so you can reach it as `bandbox.local` on any network — home, rehearsal Wi-Fi, phone hotspot — without ever knowing the IP. Without them, mDNS is enabled globally but **off per-link**, and `bandbox.local` won't resolve.
 
 ### Create the bandbox user and SSH access
 
@@ -250,6 +254,8 @@ Name=wlan0
 
 [Network]
 DHCP=yes
+MulticastDNS=yes
+LLMNR=yes
 EOF
 
 # Restart to pick up config
