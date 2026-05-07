@@ -6,6 +6,8 @@ requires-python = ">=3.11"
 dependencies = [
     "pillow",
     "numpy",
+    "RPi.GPIO",
+    "spidev",
     "waveshare-epd @ git+https://github.com/waveshareteam/e-Paper.git#subdirectory=RaspberryPi_JetsonNano/python",
 ]
 

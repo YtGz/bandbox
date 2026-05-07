@@ -319,7 +319,8 @@ git clone https://github.com/YtGz/bandbox.git
 ### Install Python dependencies with uv
 
 ```bash
-sudo pacman -S uv
+# uv plus build tools needed for RPi.GPIO and spidev C extensions
+sudo pacman -S uv base-devel
 
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
@@ -329,7 +330,9 @@ cd ~/bandbox/pi
 uv sync
 ```
 
-`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
+`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, RPi.GPIO, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
+
+> **First sync is slow** — `RPi.GPIO` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
 
 ### Install PiSugar power manager
 
