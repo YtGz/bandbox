@@ -456,8 +456,11 @@ Open the PiSugar web UI at `http://<pi-ip>:8421` and configure button gestures:
 3. **Watch** the e-ink display — it shows hashing, copying, and upload progress
 4. **Unplug** when you see "Safe to unplug!" (files are copied to staging)
 5. **Uploads happen automatically** when Wi-Fi is available
+6. **Shut it down** when you're done — single-tap then long-press the PiSugar button (or `sudo shutdown -h now`)
 
 The USB stick is never modified. Re-inserting the same stick is harmless — duplicates are skipped instantly via the local hash journal.
+
+> **Always power off between sessions.** An idle Pi Zero 2 W still pulls ~120–180 mA and drains the 1200 mAh battery in 6–10 hours. In deep sleep (after a clean shutdown via the `pisugar-poweroff` service) the PiSugar 3 draws microamps — months of standby. Booting back up costs only ~5–8 mAh, so even daily use is dramatically cheaper than leaving it on. **Don't use a bare long-press for shutdown** — that's a hardware power-cut and risks SD card corruption. The single-tap → long-press sequence triggers a clean shutdown via `pisugar-server`'s soft-poweroff hook.
 
 ## Troubleshooting
 
