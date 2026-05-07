@@ -440,14 +440,80 @@ Higher `priority` values are tried first. The Pi will auto-connect to whichever 
 
 BandBox works offline — it buffers recordings locally and uploads when Wi-Fi is available.
 
-## Step 5: PiSugar Button Config (Optional)
+## Step 5: PiSugar Configuration
 
-Open the PiSugar web UI at `http://<pi-ip>:8421` and configure button gestures:
+The default `/etc/pisugar-server/config.json` leaves nearly everything `null` — no auth, no buttons, no auto-shutdown, no battery protection. Replace it with a config tuned for portable battery use:
 
-| Gesture | Command | Purpose |
+```bash
+sudo tee /etc/pisugar-server/config.json > /dev/null << 'EOF'
+{
+    "auth_user": "admin",
+    "auth_password": "CHANGE_ME",
+    "session_timeout": 3600,
+    "i2c_bus": 1,
+    "i2c_addr": null,
+
+    "single_tap_enable": true,
+    "single_tap_shell": "systemctl restart bandbox",
+    "double_tap_enable": false,
+    "double_tap_shell": "",
+    "long_tap_enable": true,
+    "long_tap_shell": "shutdown -h now",
+
+    "auto_shutdown_level": 3,
+    "auto_shutdown_delay": 30,
+    "auto_charging_range": [80, 95],
+    "full_charge_duration": 3600,
+
+    "auto_power_on": false,
+    "soft_poweroff": true,
+    "soft_poweroff_shell": "shutdown -h now",
+
+    "anti_mistouch": true,
+    "bat_protect": true,
+
+    "auto_rtc_sync": true,
+    "auto_wake_time": null,
+    "auto_wake_repeat": 0,
+    "adj_comm": null,
+    "adj_diff": null,
+    "rtc_adj_ppm": null
+}
+EOF
+sudo systemctl restart pisugar-server
+```
+
+Why each non-default matters:
+
+| Setting | Value | Why |
 | --- | --- | --- |
-| Single tap | `systemctl restart bandbox` | Force screen refresh |
-| Long press | `shutdown -h now` | Safe shutdown |
+| `auth_user` / `auth_password` | set | Default is `admin/admin` (or no auth) — anyone on the rehearsal Wi-Fi can shut your Pi down |
+| `single_tap_shell` | `systemctl restart bandbox` | Force a screen refresh / reset state without rebooting |
+| `long_tap_shell` | `shutdown -h now` | Triggers a clean shutdown (instead of a hardware power-cut that risks SD corruption) |
+| `auto_shutdown_level` | `3` | Auto-shutdown at 3 % battery — prevents deep discharge that damages LiPo cells |
+| `auto_shutdown_delay` | `30` | Grace period (seconds) — gives an in-flight upload time to finish |
+| `auto_charging_range` | `[80, 95]` | Stops charging at 95 %, resumes at 80 %. LiPo cells age fastest at 100 % — this trades ~15 % capacity for **2–3× battery lifespan** |
+| `full_charge_duration` | `3600` | Stop after 1 h at "full" even if the chip's gauge drifts — extra safety against overcharge |
+| `auto_power_on` | `false` | Don't auto-boot when USB is plugged in — keeps the chip in deep sleep, saves microamps × hours |
+| `soft_poweroff` | `true` | Enables the tap-then-long-press sequence to do a clean shutdown via systemd |
+| `soft_poweroff_shell` | `shutdown -h now` | What the soft-poweroff sequence runs |
+| `anti_mistouch` | `true` | Ignores stray button taps (e.g. in a backpack) — prevents accidental shutdowns |
+| `bat_protect` | `true` | Enables the chip's hardware over/under-voltage and over-current protection |
+| `auto_rtc_sync` | `true` | Keep the PiSugar's RTC in sync with system time — useful since the Pi has no built-in RTC |
+
+> **Always change `auth_password`** before exposing the Pi on any shared network. The web UI on port 8421 lets anyone with credentials shut down or reconfigure your device.
+
+You can also tweak any of these later through the web UI at `http://<pi-ip>:8421`.
+
+## Step 6: PiSugar Button Cheat Sheet
+
+After the config above, the buttons behave like this:
+
+| Gesture | Action |
+| --- | --- |
+| Single tap | Restart `bandbox.service` (refresh the screen) |
+| Single tap → long press | Soft shutdown via systemd (safe) |
+| Long press alone | Hardware power-cut (emergency only — risks SD corruption) |
 
 ## Usage
 
