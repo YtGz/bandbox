@@ -307,21 +307,29 @@ cd paru
 makepkg -si
 ```
 
-## Step 3: Install BandBox Dependencies
+## Step 3: Install BandBox
+
+### Clone the repo
 
 ```bash
-# System packages
-sudo pacman -S python python-pillow python-numpy
+cd ~
+git clone https://github.com/YtGz/bandbox.git
+```
+
+### Install Python dependencies with uv
+
+```bash
+sudo pacman -S uv
 
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
 
-# Waveshare e-Paper driver
-cd ~
-git clone https://github.com/waveshareteam/e-Paper.git
-cd e-Paper/RaspberryPi_JetsonNano/python
-pip install . --break-system-packages
+# Create venv and install everything from pyproject.toml
+cd ~/bandbox/pi
+uv sync
 ```
+
+`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
 
 ### Install PiSugar power manager
 
@@ -333,15 +341,6 @@ Verify it's running:
 
 ```bash
 sudo systemctl status pisugar-server
-```
-
-## Step 4: Install BandBox
-
-### Clone the repo
-
-```bash
-cd ~
-git clone https://github.com/YtGz/bandbox.git
 ```
 
 ### Configure server connection
@@ -383,7 +382,7 @@ journalctl -u bandbox -f
 
 You should see the e-ink display wake up with "BandBox v1.0" and a happy face.
 
-## Step 5: Configure Wi-Fi Networks
+## Step 4: Configure Wi-Fi Networks
 
 Add all networks the Pi might encounter — rehearsal space, home, phone hotspot. Edit the wpa_supplicant config to include multiple networks:
 
@@ -413,7 +412,7 @@ Higher `priority` values are tried first. The Pi will auto-connect to whichever 
 
 BandBox works offline — it buffers recordings locally and uploads when Wi-Fi is available.
 
-## Step 6: PiSugar Button Config (Optional)
+## Step 5: PiSugar Button Config (Optional)
 
 Open the PiSugar web UI at `http://<pi-ip>:8421` and configure button gestures:
 

@@ -1,0 +1,13 @@
+[project]
+name = "bandbox-pi"
+version = "1.0.0"
+description = "BandBox recording uploader for Raspberry Pi Zero 2 W"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow",
+    "numpy",
+    "waveshare-epd @ git+https://github.com/waveshareteam/e-Paper.git#subdirectory=RaspberryPi_JetsonNano/python",
+]
+
+[tool.uv]
+package = false

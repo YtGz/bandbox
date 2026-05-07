@@ -5,12 +5,13 @@ Wants=pisugar-server.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/bandbox/pi/bandbox.py
-WorkingDirectory=/home/pi/bandbox/pi
+ExecStart=/home/bandbox/bandbox/pi/.venv/bin/python /home/bandbox/bandbox/pi/bandbox.py
+WorkingDirectory=/home/bandbox/bandbox/pi
+User=bandbox
 Restart=always
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/home/pi/.bandbox/env
+EnvironmentFile=-/home/bandbox/.bandbox/env
 
 [Install]
 WantedBy=multi-user.target
