@@ -1,6 +1,6 @@
 [project]
 name = "bandbox-pi"
-version = "1.0.0"
+version = "0.1.0"
 description = "BandBox recording uploader for Raspberry Pi Zero 2 W"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,3 +13,12 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+# waveshare-epd's setup.py picks between RPi.GPIO and Jetson.GPIO based on a
+# sysfs path (/sys/bus/platform/drivers/gpiomem-bcm2835) that no longer exists
+# on modern Pi kernels, so it falls through and pulls in Jetson.GPIO. The
+# actual waveshare code always does `import RPi.GPIO`, so Jetson.GPIO is dead
+# weight. Drop it from the resolved set.
+override-dependencies = [
+    "jetson-gpio ; sys_platform == 'never'",
+]
