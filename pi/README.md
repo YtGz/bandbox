@@ -550,6 +550,17 @@ sudo ldconfig
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
 
+# Grant the bandbox user access to /dev/gpiochip*. Arch doesn't ship a
+# `gpio` group or udev rule by default, so we create both — otherwise
+# the lgpio pin factory aborts with "can not open gpiochip" and
+# gpiozero falls back through every other (broken) factory.
+sudo groupadd -r gpio
+sudo usermod -aG gpio bandbox
+echo 'KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"' | \
+  sudo tee /etc/udev/rules.d/99-gpio.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger /dev/gpiochip0
+
 # Create venv and install everything from pyproject.toml
 cd ~/bandbox/pi
 uv sync
