@@ -313,34 +313,9 @@ cd paru
 makepkg -si
 ```
 
-## Step 3: Install BandBox
+## Step 3: Install and Configure PiSugar
 
-### Clone the repo
-
-```bash
-cd ~
-git clone https://github.com/YtGz/bandbox.git
-```
-
-### Install Python dependencies with uv
-
-```bash
-# uv plus build tools needed for RPi.GPIO and spidev C extensions
-sudo pacman -S uv base-devel
-
-# Enable SPI (needed for the e-ink display)
-echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
-
-# Create venv and install everything from pyproject.toml
-cd ~/bandbox/pi
-uv sync
-```
-
-`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, RPi.GPIO, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
-
-> **First sync is slow** — `RPi.GPIO` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
-
-### Install PiSugar power manager
+### Install the power manager
 
 The official `pisugar-power-manager.sh` installer only supports Debian/RPM and aborts on Arch Linux ARM. Instead, use the prebuilt aarch64-musl tarball from the [pisugar-power-manager-rs releases](https://github.com/PiSugar/pisugar-power-manager-rs/releases) — it ships a distro-agnostic `install.sh` that just drops binaries, configs, and systemd units in place.
 
@@ -377,76 +352,7 @@ sudo systemctl status pisugar-server
 
 Verify the battery is detected: `curl http://localhost:8421/exec?cmd=get%20battery` (after logging in via the web UI to get a token — see [PiSugar HTTP API](https://github.com/PiSugar/pisugar-power-manager-rs#http-api)). Default web UI credentials are `admin/admin` — change them at `http://<pi-ip>:8421`.
 
-### Configure server connection
-
-```bash
-mkdir -p ~/.bandbox
-
-cat > ~/.bandbox/env << 'EOF'
-BANDBOX_SERVER_URL=https://your-server.example.com
-BANDBOX_API_KEY=your-secret-api-key
-EOF
-
-chmod 600 ~/.bandbox/env
-```
-
-The API key must match the `PI_API_KEY` in your server's `.env` file.
-
-### Create mount point and staging directory
-
-```bash
-mkdir -p ~/staging
-sudo mkdir -p /mnt/bandbox-usb
-```
-
-### Install and start the service
-
-```bash
-sudo cp ~/bandbox/pi/bandbox.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now bandbox
-```
-
-### Check it's running
-
-```bash
-sudo systemctl status bandbox
-journalctl -u bandbox -f
-```
-
-You should see the e-ink display wake up with "BandBox v0.1.0" and a happy face.
-
-## Step 4: Configure Wi-Fi Networks
-
-Add all networks the Pi might encounter — rehearsal space, home, phone hotspot. Edit the wpa_supplicant config to include multiple networks:
-
-```bash
-sudo tee /etc/wpa_supplicant/wpa_supplicant-wlan0.conf << 'EOF'
-ctrl_interface=/run/wpa_supplicant
-update_config=1
-country=US
-
-network={
-	ssid="RehearsalWiFi"
-	psk="password1"
-	priority=2
-}
-
-network={
-	ssid="HomeWiFi"
-	psk="password2"
-	priority=1
-}
-EOF
-
-sudo systemctl restart wpa_supplicant@wlan0
-```
-
-Higher `priority` values are tried first. The Pi will auto-connect to whichever network is available.
-
-BandBox works offline — it buffers recordings locally and uploads when Wi-Fi is available.
-
-## Step 5: PiSugar Configuration
+### Tune the configuration
 
 The default `/etc/pisugar-server/config.json` leaves nearly everything `null` — no auth, no buttons, no auto-shutdown, no battery protection. Replace it with a config tuned for portable battery use:
 
@@ -510,6 +416,102 @@ Why each non-default matters:
 > **Always change `auth_password`** before exposing the Pi on any shared network. The web UI on port 8421 lets anyone with credentials shut down or reconfigure your device.
 
 You can also tweak any of these later through the web UI at `http://<pi-ip>:8421`.
+
+## Step 4: Configure Wi-Fi Networks
+
+Add all networks the Pi might encounter — rehearsal space, home, phone hotspot. Edit the wpa_supplicant config to include multiple networks:
+
+```bash
+sudo tee /etc/wpa_supplicant/wpa_supplicant-wlan0.conf << 'EOF'
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+country=US
+
+network={
+	ssid="RehearsalWiFi"
+	psk="password1"
+	priority=2
+}
+
+network={
+	ssid="HomeWiFi"
+	psk="password2"
+	priority=1
+}
+EOF
+
+sudo systemctl restart wpa_supplicant@wlan0
+```
+
+Higher `priority` values are tried first. The Pi will auto-connect to whichever network is available.
+
+BandBox works offline — it buffers recordings locally and uploads when Wi-Fi is available.
+
+## Step 5: Install BandBox
+
+### Clone the repo
+
+```bash
+cd ~
+git clone https://github.com/YtGz/bandbox.git
+```
+
+### Install Python dependencies with uv
+
+```bash
+# uv plus build tools needed for RPi.GPIO and spidev C extensions
+sudo pacman -S uv base-devel
+
+# Enable SPI (needed for the e-ink display)
+echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
+
+# Create venv and install everything from pyproject.toml
+cd ~/bandbox/pi
+uv sync
+```
+
+`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, RPi.GPIO, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
+
+> **First sync is slow** — `RPi.GPIO` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
+
+### Configure server connection
+
+```bash
+mkdir -p ~/.bandbox
+
+cat > ~/.bandbox/env << 'EOF'
+BANDBOX_SERVER_URL=https://your-server.example.com
+BANDBOX_API_KEY=your-secret-api-key
+EOF
+
+chmod 600 ~/.bandbox/env
+```
+
+The API key must match the `PI_API_KEY` in your server's `.env` file.
+
+### Create mount point and staging directory
+
+```bash
+mkdir -p ~/staging
+sudo mkdir -p /mnt/bandbox-usb
+```
+
+### Install and start the service
+
+```bash
+sudo cp ~/bandbox/pi/bandbox.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bandbox
+```
+
+### Check it's running
+
+```bash
+sudo systemctl status bandbox
+journalctl -u bandbox -f
+```
+
+You should see the e-ink display wake up with "BandBox v0.1.0" and a happy face.
 
 ## Step 6: PiSugar Button Cheat Sheet
 
