@@ -547,8 +547,25 @@ cd /tmp && rm -rf lg lg.zip  # clean up the build tree
 echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/local.conf
 sudo ldconfig
 
-# Enable SPI (needed for the e-ink display)
-echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
+# Enable SPI for the e-ink display. On Arch Linux ARM aarch64 the
+# `dtparam=spi=on` line in config.txt is a no-op — that's a vendor-firmware
+# parameter, and U-Boot doesn't honour it. We have to merge an overlay
+# directly into the device tree blob the kernel loads.
+sudo pacman -S --needed dtc
+cd ~/bandbox/pi/dtbo
+dtc -@ -I dts -O dtb -o spi0.dtbo spi0.dts
+
+cd /boot/dtbs/broadcom
+sudo cp bcm2837-rpi-zero-2-w.dtb bcm2837-rpi-zero-2-w.dtb.bak
+sudo fdtoverlay \
+  -i bcm2837-rpi-zero-2-w.dtb.bak \
+  -o bcm2837-rpi-zero-2-w.dtb \
+  ~/bandbox/pi/dtbo/spi0.dtbo
+
+# Sanity-check the merge (should print "okay" and a cs-gpios array)
+fdtget bcm2837-rpi-zero-2-w.dtb /soc/spi@7e204000 status
+fdtget bcm2837-rpi-zero-2-w.dtb /soc/spi@7e204000 cs-gpios
+# (We reboot at the end of this step to pick up the new DTB.)
 
 # Grant the bandbox user access to /dev/gpiochip*. Arch doesn't ship a
 # `gpio` group or udev rule by default, so we create both — otherwise
@@ -565,6 +582,8 @@ sudo udevadm trigger /dev/gpiochip0
 cd ~/bandbox/pi
 uv sync
 ```
+
+> The kernel only reads the DTB once at boot, so the SPI overlay above doesn't take effect until you reboot. We do that as part of the next step (after the service is installed) — but if you want to verify the merge first, `sudo reboot` and check `ls /dev/spidev*` shows `/dev/spidev0.0` and `/dev/spidev0.1`.
 
 `uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, gpiozero, lgpio, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
 
@@ -599,7 +618,11 @@ sudo mkdir -p /mnt/bandbox-usb
 ```bash
 sudo cp ~/bandbox/pi/bandbox.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now bandbox
+sudo systemctl enable bandbox
+
+# Reboot once now so the SPI overlay we merged earlier takes effect.
+# After reboot the service comes up automatically.
+sudo reboot
 ```
 
 ### Check it's running
