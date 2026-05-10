@@ -31,11 +31,17 @@
 			status = "okay";
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_gpio7>;
-			cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 
 			/*
+			 * No `cs-gpios` here on purpose. The spi0_gpio7
+			 * pinmux puts GPIO 7 & 8 into ALT0, where they act as
+			 * the BCM2835 SPI controller's hardware chip selects
+			 * (SPI0_CE1 / SPI0_CE0). Declaring them as cs-gpios
+			 * at the same time double-claims the pins and the
+			 * SPI driver fails with "pin already requested".
+			 *
 			 * "spidev" as a DT compatible triggers a kernel
 			 * warning ("buggy DT: spidev listed directly in DT").
 			 * Use the rohm,dh2228fv shim that the official
