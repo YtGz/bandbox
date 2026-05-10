@@ -367,6 +367,7 @@ cd /tmp
 git clone https://aur.archlinux.org/paru.git
 cd paru
 CARGO_BUILD_JOBS=1 RUSTFLAGS="-C codegen-units=1" makepkg -si
+cd /tmp && rm -rf paru   # clean up the build tree
 ```
 
 > `CARGO_BUILD_JOBS=1` serializes compilation (no parallel rustc processes competing for RAM) and `codegen-units=1` makes each crate emit a single LLVM module, which lowers peak memory at the cost of longer link times. Expect 30–45 min on the Pi Zero 2 W — but it will actually finish.
@@ -395,6 +396,7 @@ tar -xf pisugar_aarch64-unknown-linux-musl.tar.gz
 cd aarch64-unknown-linux-musl
 sudo bash install.sh -m 'PiSugar 3' server
 sudo bash install.sh -m 'PiSugar 3' poweroff
+cd /tmp && rm -rf aarch64-unknown-linux-musl pisugar_aarch64-unknown-linux-musl.tar.gz
 ```
 
 > The bundled `install.sh` only accepts **one** positional arg (e.g. `server`, `poweroff`, or `all`) — passing two silently installs only the first. Don't use `all` either: it pulls in `programmer`, which has a broken path (`target/release/pisugar-programmer`) that doesn't exist in the release tarball, causing the script to abort midway.
@@ -526,6 +528,7 @@ cd /tmp
 curl -fLO http://abyz.me.uk/lg/lg.zip
 unzip lg.zip && cd lg
 make && sudo make install   # installs to /usr/local/lib + runs ldconfig
+cd /tmp && rm -rf lg lg.zip  # clean up the build tree
 
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
