@@ -26,16 +26,22 @@
 	compatible = "brcm,bcm2837";
 
 	/*
-	 * Upstream Linux's BCM283x DTB has a `gpio@7e200000/alt0` child node
-	 * that statically pre-claims GPIOs 0-27 in ALT0 mode at boot ("pin
-	 * already requested by 3f200000.gpio"). The SPI driver then can't
-	 * grab the same pins and fails with -EINVAL. Disable the hog so the
-	 * SPI controller's own pinctrl-0 group can claim 7-11 cleanly.
+	 * Upstream Linux's BCM283x DTB has a `gpio@7e200000/alt0` hog node
+	 * that statically pre-claims GPIOs 4, 5, 7, 8, 9, 10, 11 in ALT0
+	 * mode at boot. The parent gpio controller's `pinctrl-0` references
+	 * the hog by phandle, so simply setting status="disabled" on the
+	 * hog has no effect (pinctrl hogs ignore status). The SPI driver
+	 * then can't grab GPIOs 7-11 ("pin already requested by
+	 * 3f200000.gpio") and probe fails.
+	 *
+	 * Shrink the hog's `brcm,pins` list down to {4, 5} so it stops
+	 * claiming the SPI pins. We can't *remove* pins from a property in
+	 * an overlay — only replace it whole — so just rewrite the array.
 	 */
 	fragment@0 {
 		target-path = "/soc/gpio@7e200000/alt0";
 		__overlay__ {
-			status = "disabled";
+			brcm,pins = <4 5>;
 		};
 	};
 
