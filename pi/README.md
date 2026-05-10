@@ -542,6 +542,11 @@ make CFLAGS="-O3 -Wall -pthread -fpic -std=gnu17 -Wno-error=incompatible-pointer
 sudo make install   # installs to /usr/local/lib + runs ldconfig
 cd /tmp && rm -rf lg lg.zip  # clean up the build tree
 
+# Arch's dynamic linker doesn't search /usr/local/lib by default, so the
+# Python lgpio wheel can't find liblgpio.so.1 at import time. Add it.
+echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/local.conf
+sudo ldconfig
+
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
 
