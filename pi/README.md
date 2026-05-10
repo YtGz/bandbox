@@ -275,6 +275,30 @@ The base aarch64 image doesn't include `sudo`. SSH in as root (password `root`) 
 ssh root@<pi-ip>
 pacman-key --init
 pacman-key --populate archlinuxarm
+```
+
+Before the first full upgrade, drop the GPU firmware blobs and disable the fallback initramfs — otherwise `mkinitcpio` will run out of memory or `/boot` space generating a fallback image the Pi will never use:
+
+```bash
+# Remove NVIDIA + AMD GPU firmware (irrelevant on a Pi Zero 2 W).
+# -Rdd skips dependency checks so the linux-firmware meta-package
+# doesn't block the removal.
+pacman -Rdd --noconfirm linux-firmware-nvidia linux-firmware-amdgpu
+
+# Disable the fallback initramfs preset.
+sed -i \
+  -e "s/^PRESETS=.*/PRESETS=('default')/" \
+  -e 's/^fallback_image=/# fallback_image=/' \
+  -e 's/^fallback_options=/# fallback_options=/' \
+  /etc/mkinitcpio.d/linux-aarch64.preset
+
+# Clean up the now-orphaned fallback image, if one already exists.
+rm -f /boot/initramfs-linux-fallback.img
+```
+
+Now upgrade and install the basics:
+
+```bash
 pacman -Syu
 pacman -S sudo fish
 chsh -s /usr/bin/fish bandbox
