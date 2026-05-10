@@ -1,0 +1,58 @@
+/*
+ * Enable SPI0 on the BCM2837 (Pi Zero 2 W) for use with the Waveshare
+ * 2.13" e-ink display.
+ *
+ * Arch Linux ARM aarch64 ships upstream Linux DTBs, which leave the SPI
+ * controller disabled and — unlike Raspberry Pi OS's vendor DTBs — provide
+ * no `dtparam=spi=on`-style hook to enable it from config.txt. This
+ * overlay does the equivalent: enables the controller, points it at the
+ * standard SPI0 pinmux (GPIO 7/8/9/10/11), declares CE0/CE1 as GPIO chip
+ * selects, and exposes /dev/spidev0.0 and /dev/spidev0.1 via the
+ * userspace `spidev` driver.
+ *
+ * Apply with:
+ *   dtc -@ -I dts -O dtb -o spi0.dtbo spi0.dts
+ *   fdtoverlay -i <base>.dtb -o <merged>.dtb spi0.dtbo
+ *
+ * The base DTB must have been built with -@ (symbols). The upstream
+ * BCM283x DTBs shipped by Arch are. Verify with:
+ *   ls /proc/device-tree/__symbols__/
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2837";
+
+	fragment@0 {
+		target-path = "/soc/spi@7e204000";
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi0_gpio7>;
+			cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/*
+			 * "spidev" as a DT compatible triggers a kernel
+			 * warning ("buggy DT: spidev listed directly in DT").
+			 * Use the rohm,dh2228fv shim that the official
+			 * Raspberry Pi spi0 overlay also uses — the spidev
+			 * driver matches this compatible without complaining.
+			 */
+			spidev@0 {
+				compatible = "rohm,dh2228fv";
+				reg = <0>;
+				spi-max-frequency = <125000000>;
+			};
+
+			spidev@1 {
+				compatible = "rohm,dh2228fv";
+				reg = <1>;
+				spi-max-frequency = <125000000>;
+			};
+		};
+	};
+};
