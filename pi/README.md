@@ -304,14 +304,48 @@ sudo pacman -Syu
 
 ### Install paru (AUR helper)
 
+Paru is written in Rust, and `rustc` will OOM-kill itself partway through linking on the Pi Zero 2 W's 512 MB of RAM with default settings. Two preparations are needed: give the kernel more virtual memory via zram, and tell Cargo to compile single-threaded with one codegen unit.
+
+#### Set up zram swap
+
+zram exposes a compressed block device backed by RAM — "swapping" to it is just in-place compression, not disk I/O. lz4 has trivial CPU cost even on the Pi Zero 2 W and effectively stretches 512 MB to ~800 MB of usable memory without touching the SD card.
+
+```bash
+sudo pacman -S zram-generator
+
+sudo tee /etc/systemd/zram-generator.conf << 'EOF'
+[zram0]
+zram-size = ram * 2
+compression-algorithm = lz4
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl start systemd-zram-setup@zram0.service
+```
+
+Verify: `swapon --show` should list `/dev/zram0`.
+
+#### Tune swappiness for zram
+
+`vm.swappiness` controls how eagerly the kernel moves inactive pages to swap. With disk-based swap you want it low to avoid slow I/O and SD-card wear; with zram, "swap" is just compressed RAM, so you want it **high** — tell the kernel to aggressively reclaim anonymous pages instead of dropping file cache. Values up to 200 are valid and specifically intended for zram setups.
+
+```bash
+echo 'vm.swappiness=150' | sudo tee /etc/sysctl.d/99-swappiness.conf
+sudo sysctl --system
+```
+
+#### Build paru
+
 ```bash
 sudo pacman -S --needed base-devel git
 
 cd /tmp
 git clone https://aur.archlinux.org/paru.git
 cd paru
-makepkg -si
+CARGO_BUILD_JOBS=1 RUSTFLAGS="-C codegen-units=1" makepkg -si
 ```
+
+> `CARGO_BUILD_JOBS=1` serializes compilation (no parallel rustc processes competing for RAM) and `codegen-units=1` makes each crate emit a single LLVM module, which lowers peak memory at the cost of longer link times. Expect 30–45 min on the Pi Zero 2 W — but it will actually finish.
 
 ## Step 3: Install and Configure PiSugar
 
