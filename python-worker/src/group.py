@@ -272,7 +272,7 @@ def _call_llm(report: str) -> dict:
         log.warning("LLM_API_KEY not set, skipping LLM grouping")
         return {"groups": [], "ungrouped": []}
 
-    model = os.environ.get("LLM_MODEL", "claude-opus-4-6")
+    model = os.environ.get("LLM_MODEL", "claude-opus-4-7")
 
     resp = httpx.post(
         f"{base_url.rstrip('/')}/messages",
