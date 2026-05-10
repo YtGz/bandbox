@@ -562,9 +562,8 @@ sudo fdtoverlay \
   -o bcm2837-rpi-zero-2-w.dtb \
   ~/bandbox/pi/dtbo/spi0.dtbo
 
-# Sanity-check the merge (should print "okay" and a cs-gpios array)
+# Sanity-check the merge (should print "okay")
 fdtget bcm2837-rpi-zero-2-w.dtb /soc/spi@7e204000 status
-fdtget bcm2837-rpi-zero-2-w.dtb /soc/spi@7e204000 cs-gpios
 # (We reboot at the end of this step to pick up the new DTB.)
 
 # Grant the bandbox user access to /dev/gpiochip*. Arch doesn't ship a
@@ -577,6 +576,16 @@ echo 'KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"' | \
   sudo tee /etc/udev/rules.d/99-gpio.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger /dev/gpiochip0
+
+# Same story for /dev/spidev0.* — Arch ships no `spi` group either, so
+# spidev.SpiDev().open(0,0) raises PermissionError until we add one.
+sudo groupadd -r spi
+sudo usermod -aG spi bandbox
+echo 'KERNEL=="spidev*", GROUP="spi", MODE="0660"' | \
+  sudo tee /etc/udev/rules.d/90-spi.rules
+sudo udevadm control --reload-rules
+# (spidev nodes don't exist until after the DTB-overlay reboot below;
+# the rule will apply automatically when they appear.)
 
 # Create venv and install everything from pyproject.toml
 cd ~/bandbox/pi

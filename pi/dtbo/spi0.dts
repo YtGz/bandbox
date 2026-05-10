@@ -5,10 +5,10 @@
  * Arch Linux ARM aarch64 ships upstream Linux DTBs, which leave the SPI
  * controller disabled and — unlike Raspberry Pi OS's vendor DTBs — provide
  * no `dtparam=spi=on`-style hook to enable it from config.txt. This
- * overlay does the equivalent: enables the controller, points it at the
- * standard SPI0 pinmux (GPIO 7/8/9/10/11), declares CE0/CE1 as GPIO chip
- * selects, and exposes /dev/spidev0.0 and /dev/spidev0.1 via the
- * userspace `spidev` driver.
+ * overlay does the equivalent: enables the controller, muxes the SPI data
+ * pins (MOSI/MISO/SCLK), declares CE0/CE1 as GPIO chip-selects so the
+ * driver can assert/deassert them properly, and exposes /dev/spidev0.0 and
+ * /dev/spidev0.1 via the userspace `spidev` driver.
  *
  * Apply with:
  *   dtc -@ -I dts -O dtb -o spi0.dtbo spi0.dts
@@ -45,23 +45,39 @@
 		};
 	};
 
+	/*
+	 * The upstream DTB defines `spi0_gpio7` as a pinctrl group for all
+	 * five SPI pins (7, 8, 9, 10, 11) in ALT0 mode. If we reference
+	 * that group for the controller's pinctrl-0 *and* add cs-gpios, the
+	 * kernel sees a double-claim on 7 & 8 (both pinctrl alt0 function
+	 * and gpio chip-select) and the SPI probe fails.
+	 *
+	 * Fix: define our own `spi0_pins` pinctrl group that only muxes the
+	 * data/clock pins (9=MISO, 10=MOSI, 11=SCLK) into ALT0.  Pins 7 &
+	 * 8 stay in their default GPIO state and are driven by the SPI
+	 * driver via cs-gpios, which correctly toggles CE0 between frames.
+	 */
 	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			spi0_pins: spi0_pins {
+				brcm,pins = <9 10 11>;
+				brcm,function = <4>;  /* BCM2835_FSEL_ALT0 */
+			};
+		};
+	};
+
+	fragment@2 {
 		target-path = "/soc/spi@7e204000";
 		__overlay__ {
 			status = "okay";
 			pinctrl-names = "default";
-			pinctrl-0 = <&spi0_gpio7>;
+			pinctrl-0 = <&spi0_pins>;
+			cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 
 			/*
-			 * No `cs-gpios` here on purpose. The spi0_gpio7
-			 * pinmux puts GPIO 7 & 8 into ALT0, where they act as
-			 * the BCM2835 SPI controller's hardware chip selects
-			 * (SPI0_CE1 / SPI0_CE0). Declaring them as cs-gpios
-			 * at the same time double-claims the pins and the
-			 * SPI driver fails with "pin already requested".
-			 *
 			 * "spidev" as a DT compatible triggers a kernel
 			 * warning ("buggy DT: spidev listed directly in DT").
 			 * Use the rohm,dh2228fv shim that the official
