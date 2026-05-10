@@ -7,8 +7,10 @@ dependencies = [
     "pillow",
     "numpy",
     # waveshare-epd's RaspberryPi backend uses gpiozero + spidev (not RPi.GPIO).
-    # lgpio is gpiozero's modern pin factory; it works on the Pi Zero 2 W's
-    # aarch64 kernel where RPi.GPIO's mmap of /dev/gpiomem can be unreliable.
+    # lgpio is gpiozero's modern pin factory — it talks to the kernel
+    # gpio-cdev (/dev/gpiochipN) instead of mmap'ing /dev/gpiomem the way
+    # RPi.GPIO does. RPi.GPIO has been unmaintained since 2019, doesn't work
+    # on the Pi 5, and is flaky on aarch64 kernels in general.
     "gpiozero",
     "lgpio",
     "spidev",

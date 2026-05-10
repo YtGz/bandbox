@@ -518,7 +518,14 @@ git clone https://github.com/YtGz/bandbox.git
 
 ```bash
 # uv plus build tools needed for spidev / lgpio C extensions
-sudo pacman -S uv base-devel
+sudo pacman -S uv base-devel swig unzip
+
+# liblgpio (the C library lgpio's pip wheel links against). It's not in
+# Arch's repos or the AUR, but it's a tiny single-Makefile build.
+cd /tmp
+curl -fLO http://abyz.me.uk/lg/lg.zip
+unzip lg.zip && cd lg
+make && sudo make install   # installs to /usr/local/lib + runs ldconfig
 
 # Enable SPI (needed for the e-ink display)
 echo "dtparam=spi=on" | sudo tee -a /boot/config.txt
@@ -532,7 +539,7 @@ uv sync
 
 > **First sync is slow** — `lgpio` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
 
-> **Why `gpiozero` + `lgpio` and not `RPi.GPIO`?** The Waveshare driver's `RaspberryPi` backend uses `gpiozero`, which auto-picks a pin factory. `RPi.GPIO`'s `/dev/gpiomem` mmap is unreliable on the Pi Zero 2 W's aarch64 kernel; `lgpio` (kernel-character-device based) works everywhere. We also patch `waveshare_epd.epdconfig` at startup because its `grep Raspberry /proc/cpuinfo` autodetect fails on the aarch64 Arch kernel and falls through to a JetsonNano backend that needs a `sysfs_software_spi.so` shim pip never ships.
+> **Why `gpiozero` + `lgpio` and not `RPi.GPIO`?** The Waveshare driver's `RaspberryPi` backend uses `gpiozero`, which auto-picks a pin factory. `RPi.GPIO` has been unmaintained since 2019, mmaps `/dev/gpiomem` directly, and doesn't work on the Pi 5; `lgpio` talks to the modern kernel `gpio-cdev` interface (`/dev/gpiochipN`), which is where Linux is moving everyone. We also patch `waveshare_epd.epdconfig` at startup because its `grep Raspberry /proc/cpuinfo` autodetect fails on the aarch64 Arch kernel and falls through to a JetsonNano backend that needs a `sysfs_software_spi.so` shim pip never ships.
 
 ### Configure server connection
 
