@@ -517,7 +517,7 @@ git clone https://github.com/YtGz/bandbox.git
 ### Install Python dependencies with uv
 
 ```bash
-# uv plus build tools needed for RPi.GPIO and spidev C extensions
+# uv plus build tools needed for spidev / lgpio C extensions
 sudo pacman -S uv base-devel
 
 # Enable SPI (needed for the e-ink display)
@@ -528,9 +528,11 @@ cd ~/bandbox/pi
 uv sync
 ```
 
-`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, RPi.GPIO, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
+`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs Pillow, NumPy, gpiozero, lgpio, spidev, and the Waveshare e-Paper driver from GitHub. The lock file (`uv.lock`) pins exact versions so re-flashing the SD card gives identical dependencies.
 
-> **First sync is slow** — `RPi.GPIO` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
+> **First sync is slow** — `lgpio` and `spidev` compile from source on the Pi Zero 2 W (~2–3 min). Subsequent syncs are fast.
+
+> **Why `gpiozero` + `lgpio` and not `RPi.GPIO`?** The Waveshare driver's `RaspberryPi` backend uses `gpiozero`, which auto-picks a pin factory. `RPi.GPIO`'s `/dev/gpiomem` mmap is unreliable on the Pi Zero 2 W's aarch64 kernel; `lgpio` (kernel-character-device based) works everywhere. We also patch `waveshare_epd.epdconfig` at startup because its `grep Raspberry /proc/cpuinfo` autodetect fails on the aarch64 Arch kernel and falls through to a JetsonNano backend that needs a `sysfs_software_spi.so` shim pip never ships.
 
 ### Configure server connection
 
@@ -608,6 +610,7 @@ The USB stick is never modified. Re-inserting the same stick is harmless — dup
 - Check SPI is enabled: `ls /dev/spidev*` should show devices
 - Check the display version matches `DISPLAY_VERSION` in `bandbox.py` (V3 vs V4)
 - Check the ribbon cable is seated properly
+- **Logs show `Cannot find sysfs_software_spi.so`?** That means waveshare-epd's autodetect fell through to its JetsonNano backend. `bandbox.py` already monkey-patches `epdconfig` to force the RaspberryPi backend; if you see this anyway, you're probably running an old checkout — `git pull` and `uv sync` again.
 
 ### USB stick not detected
 

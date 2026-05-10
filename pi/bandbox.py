@@ -27,6 +27,39 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 # ════════════════════════════════════════════════════════════
+#  WAVESHARE EPDCONFIG PATCH
+# ════════════════════════════════════════════════════════════
+#
+# waveshare-epd picks its hardware backend at import time by running
+# `grep Raspberry /proc/cpuinfo`. The Pi Zero 2 W's aarch64 kernel on
+# Arch Linux ARM doesn't emit that string (only "Hardware: BCM2835" and
+# "Model: Raspberry Pi Zero 2 W"), so the package falls through to its
+# JetsonNano class — which needs a `sysfs_software_spi.so` shim that
+# isn't shipped via pip. Pre-load the module with the platform check
+# forced to RaspberryPi so the gpiozero + spidev path is used instead.
+def _patch_waveshare_epdconfig() -> None:
+    import importlib.util
+
+    if "waveshare_epd.epdconfig" in sys.modules:
+        return
+    spec = importlib.util.find_spec("waveshare_epd.epdconfig")
+    if spec is None or spec.origin is None:
+        return
+    with open(spec.origin) as fh:
+        src = fh.read()
+    src = src.replace(
+        '\nif "Raspberry" in output:\n',
+        '\nif True:  # patched: aarch64 Arch /proc/cpuinfo omits "Raspberry"\n',
+    )
+    mod = importlib.util.module_from_spec(spec)
+    exec(compile(src, spec.origin, "exec"), mod.__dict__)
+    sys.modules["waveshare_epd.epdconfig"] = mod
+
+
+_patch_waveshare_epdconfig()
+
+
+# ════════════════════════════════════════════════════════════
 #  CONFIGURATION — edit these to match your setup
 # ════════════════════════════════════════════════════════════
 

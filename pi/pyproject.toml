@@ -6,7 +6,11 @@ requires-python = ">=3.11"
 dependencies = [
     "pillow",
     "numpy",
-    "RPi.GPIO",
+    # waveshare-epd's RaspberryPi backend uses gpiozero + spidev (not RPi.GPIO).
+    # lgpio is gpiozero's modern pin factory; it works on the Pi Zero 2 W's
+    # aarch64 kernel where RPi.GPIO's mmap of /dev/gpiomem can be unreliable.
+    "gpiozero",
+    "lgpio",
     "spidev",
     "waveshare-epd @ git+https://github.com/waveshareteam/e-Paper.git#subdirectory=RaspberryPi_JetsonNano/python",
 ]
