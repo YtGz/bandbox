@@ -524,10 +524,22 @@ sudo pacman -S uv base-devel swig unzip
 
 # liblgpio (the C library lgpio's pip wheel links against). It's not in
 # Arch's repos or the AUR, but it's a tiny single-Makefile build.
+#
+# Two build-environment quirks on current Arch:
+#   * GCC 14 promoted -Wincompatible-pointer-types to a hard error and
+#     defaults to C23, where `()` means `(void)`. lg's source is older
+#     than that — pin -std=gnu17 and downgrade the warning to keep it
+#     compiling without patching upstream.
+#   * Arch ships only `python` (3.x), no `python3` symlink. The Makefile
+#     uses `python3` for doc generation; alias it for this shell so the
+#     non-essential doc step stops bailing out (the .so itself builds fine
+#     either way).
 cd /tmp
 curl -fLO http://abyz.me.uk/lg/lg.zip
 unzip lg.zip && cd lg
-make && sudo make install   # installs to /usr/local/lib + runs ldconfig
+alias python3=python
+make CFLAGS="-O3 -Wall -pthread -fpic -std=gnu17 -Wno-error=incompatible-pointer-types"
+sudo make install   # installs to /usr/local/lib + runs ldconfig
 cd /tmp && rm -rf lg lg.zip  # clean up the build tree
 
 # Enable SPI (needed for the e-ink display)
