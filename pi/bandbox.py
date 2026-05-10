@@ -60,6 +60,26 @@ _patch_waveshare_epdconfig()
 
 
 # ════════════════════════════════════════════════════════════
+#  GPIOZERO PI-REVISION PATCH
+# ════════════════════════════════════════════════════════════
+#
+# gpiozero discovers the Pi model by reading either
+# /proc/device-tree/system/linux,revision (binary, 4 bytes) or the
+# `Revision:` line in /proc/cpuinfo. The aarch64 Arch Linux ARM kernel
+# exposes neither, so every pin factory raises PinUnknownPi at import
+# and gpiozero raises BadPinFactory. Hard-code the revision code for
+# the Pi Zero 2 W (0x902120) — this is just used to pick GPIO chip
+# numbers, not for any runtime behaviour we care about.
+def _patch_gpiozero_revision() -> None:
+    from gpiozero.pins import local as _local
+
+    _local.get_pi_revision = lambda: 0x902120  # Pi Zero 2 W rev 1.0
+
+
+_patch_gpiozero_revision()
+
+
+# ════════════════════════════════════════════════════════════
 #  CONFIGURATION — edit these to match your setup
 # ════════════════════════════════════════════════════════════
 
