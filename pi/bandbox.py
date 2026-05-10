@@ -70,8 +70,8 @@ def _patch_waveshare_epdconfig() -> None:
         '\nif True:  # patched: aarch64 Arch /proc/cpuinfo omits "Raspberry"\n',
     )
     mod = importlib.util.module_from_spec(spec)
-    exec(compile(src, spec.origin, "exec"), mod.__dict__)
     sys.modules["waveshare_epd.epdconfig"] = mod
+    exec(compile(src, spec.origin, "exec"), mod.__dict__)
 
 
 _patch_gpiozero_revision()
