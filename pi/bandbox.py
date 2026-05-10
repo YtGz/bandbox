@@ -474,12 +474,14 @@ class Display:
                 from waveshare_epd import epd2in13_V4 as drv
             else:
                 from waveshare_epd import epd2in13_V3 as drv
-            self.epd = drv.EPD()
-            self.epd.init()
-            self.epd.Clear(0xFF)
+            epd = drv.EPD()
+            epd.init()
+            epd.Clear(0xFF)
+            self.epd = epd
             log.info("E-ink display ready (%s)", DISPLAY_VERSION)
         except Exception as e:
             log.warning("Display not available: %s (saving PNGs instead)", e)
+            self.epd = None
 
     # ── low-level refresh ──────────────────────────────────
 
