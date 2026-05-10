@@ -25,7 +25,21 @@
 / {
 	compatible = "brcm,bcm2837";
 
+	/*
+	 * Upstream Linux's BCM283x DTB has a `gpio@7e200000/alt0` child node
+	 * that statically pre-claims GPIOs 0-27 in ALT0 mode at boot ("pin
+	 * already requested by 3f200000.gpio"). The SPI driver then can't
+	 * grab the same pins and fails with -EINVAL. Disable the hog so the
+	 * SPI controller's own pinctrl-0 group can claim 7-11 cleanly.
+	 */
 	fragment@0 {
+		target-path = "/soc/gpio@7e200000/alt0";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
 		target-path = "/soc/spi@7e204000";
 		__overlay__ {
 			status = "okay";
