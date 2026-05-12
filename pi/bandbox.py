@@ -588,23 +588,24 @@ class Display:
             fw = int(23 * battery_pct / 100)
             if fw > 0:
                 d.rectangle([bx + 1, 5, bx + 1 + fw, 13], fill=0)
-        # percentage text
+        # percentage text — placed immediately to the LEFT of the icon
         txt = f"{battery_pct}%" if battery_pct >= 0 else "?"
         if charging:
             txt = "⚡" + txt
-        d.text((bx - 30, 2), txt, font=font_sm, fill=0)
+        tb = d.textbbox((0, 0), txt, font=font_sm)
+        tw = tb[2] - tb[0]
+        d.text((bx - tw - 3, 2), txt, font=font_sm, fill=0)
 
-        # wifi icon — draw one filled arc per signal bar (omit missing).
-        # Sits to the LEFT of the battery percentage text.
+        # wifi icon — to the RIGHT of the battery icon, in the gap to the edge
         if wifi:
-            wx = WIDTH - 92
+            wx, wy = WIDTH - 11, 11
             for i, r in enumerate((3, 6, 9), 1):
                 if i <= wifi_bars:
                     d.arc(
-                        [wx - r, 14 - r, wx + r, 14 + r], 200, 340,
+                        [wx - r, wy - r, wx + r, wy + r], 200, 340,
                         fill=0, width=1,
                     )
-            d.ellipse([wx - 1, 13, wx + 1, 15], fill=0)
+            d.ellipse([wx - 1, wy - 1, wx + 1, wy + 1], fill=0)
 
         # separator
         d.line([0, 18, WIDTH, 18], fill=0, width=1)
