@@ -625,23 +625,31 @@ sudo mkdir -p /mnt/bandbox-usb
 ### Allow the bandbox user to mount the USB stick
 
 The service runs as the unprivileged `bandbox` user, but `mount(8)` and
-`umount(8)` need root (CAP_SYS_ADMIN). Grant just those two binaries,
-just for `/mnt/bandbox-usb`, with no password prompt — anything wider
-would let any user mount arbitrary filesystems anywhere:
+`umount(8)` need root (CAP_SYS_ADMIN). Install two tiny wrapper scripts
+from the repo and grant `sudo -n` access to just those — the wrappers
+hard-code the mount flags and validate the device path, so the sudoers
+entry stays free of fragile comma-escaping:
 
 ```bash
+sudo install -m 0755 \
+  ~/bandbox/pi/scripts/bandbox-mount-usb \
+  ~/bandbox/pi/scripts/bandbox-umount-usb \
+  /usr/local/sbin/
+
 sudo tee /etc/sudoers.d/bandbox-usb << 'EOF'
-bandbox ALL=(root) NOPASSWD: /usr/bin/mount -o ro\,nosuid\,nodev\,noexec /dev/sd[a-z][0-9] /mnt/bandbox-usb
-bandbox ALL=(root) NOPASSWD: /usr/bin/umount /mnt/bandbox-usb
+bandbox ALL=(root) NOPASSWD: /usr/local/sbin/bandbox-mount-usb, /usr/local/sbin/bandbox-umount-usb
 EOF
 sudo chmod 440 /etc/sudoers.d/bandbox-usb
 sudo visudo -cf /etc/sudoers.d/bandbox-usb   # syntax check
 ```
 
-> The commas inside `-o` are escaped because sudoers treats commas as
-> argument separators. Without the backslashes the rule won't match and
-> `sudo -n mount …` will fail with `a password is required`, which the
-> e-ink shows as "Something's off-key. / Can't read USB."
+> Verify with `sudo -n -l -U bandbox` — the two wrappers should appear
+> under "NOPASSWD". A bare `sudo -n mount …` rule looks tempting but
+> sudoers parses commas in the `-o ro,nosuid,nodev,noexec` argument as
+> command separators; the escape (`\,`) works on some distros and
+> silently doesn't on others, leaving you with the same
+> "Something's off-key. / Can't read USB." screen this rule is meant
+> to prevent.
 
 ### Install and start the service
 

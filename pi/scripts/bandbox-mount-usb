@@ -1,0 +1,20 @@
+#!/bin/sh
+# Mount a USB mass-storage partition read-only at /mnt/bandbox-usb.
+#
+# Invoked by bandbox.py via `sudo -n` so the unprivileged `bandbox`
+# user can mount sticks without a password. Argument validation lives
+# here (not in the sudoers entry) because sudoers' comma-escaping for
+# multi-option `-o` strings is fragile across distros — see
+# https://github.com/sudo-project/sudo/issues/121.
+set -eu
+
+DEV="${1:-}"
+case "$DEV" in
+  /dev/sd[a-z][0-9]|/dev/sd[a-z][0-9][0-9]) ;;
+  *)
+    echo "bandbox-mount-usb: refusing to mount '$DEV'" >&2
+    exit 2
+    ;;
+esac
+
+exec /usr/bin/mount -o ro,nosuid,nodev,noexec "$DEV" /mnt/bandbox-usb

@@ -391,21 +391,18 @@ def find_usb_partition():
 
 
 def mount_usb(device):
-    # We run as the unprivileged `bandbox` user, so mount(8) needs sudo.
-    # `-n` makes it fail fast instead of prompting if the sudoers rule in
-    # README §5 hasn't been installed — see "USB stick not detected".
+    # We run as the unprivileged `bandbox` user, so mount(8) needs root.
+    # The sudoers drop-in only permits the bandbox-mount-usb wrapper —
+    # see pi/README.md §5 "Allow the bandbox user to mount the USB stick".
     r = subprocess.run(
-        [
-            "sudo", "-n", "mount",
-            "-o", "ro,nosuid,nodev,noexec",
-            device, str(MOUNT_POINT),
-        ],
+        ["sudo", "-n", "/usr/local/sbin/bandbox-mount-usb", device],
         capture_output=True, text=True,
     )
     if r.returncode != 0:
         log.error(
             "mount %s -> %s failed (rc=%d): %s",
-            device, MOUNT_POINT, r.returncode, (r.stderr or "").strip(),
+            device, MOUNT_POINT, r.returncode,
+            (r.stderr or r.stdout or "").strip(),
         )
     return r.returncode == 0
 
@@ -413,7 +410,8 @@ def mount_usb(device):
 def unmount_usb():
     subprocess.run(["sync"], capture_output=True)
     subprocess.run(
-        ["sudo", "-n", "umount", str(MOUNT_POINT)], capture_output=True,
+        ["sudo", "-n", "/usr/local/sbin/bandbox-umount-usb"],
+        capture_output=True,
     )
 
 

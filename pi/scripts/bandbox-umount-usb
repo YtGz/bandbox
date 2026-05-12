@@ -1,0 +1,4 @@
+#!/bin/sh
+# Unmount /mnt/bandbox-usb. Counterpart to bandbox-mount-usb.
+set -eu
+exec /usr/bin/umount /mnt/bandbox-usb
