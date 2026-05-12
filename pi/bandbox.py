@@ -21,6 +21,11 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo
+    TZ = ZoneInfo("Europe/Vaduz")
+except Exception:  # pragma: no cover — fallback if tzdata missing
+    TZ = timezone.utc
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -973,7 +978,7 @@ class BandBox:
 
     def show_idle(self):
         pct, _ = get_battery()
-        now_str = datetime.now().strftime("%I:%M %p")
+        now_str = datetime.now(TZ).strftime("%H:%M")
 
         if 0 <= pct < 15:
             mood, status = "error", msg("low_battery")
