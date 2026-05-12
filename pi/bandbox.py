@@ -461,8 +461,11 @@ def upload_file(filepath, file_hash, filename):
         # 64 KB chunks. http.client.request() with a file-like body
         # already does this internally, but we want explicit control
         # over the buffer size and error handling around partial writes.
+        #
+        # Note: putrequest() sends `Host:` itself — adding our own would
+        # produce a duplicate header that some reverse proxies reject
+        # with a connection reset.
         conn.putrequest("POST", path)
-        conn.putheader("Host", parts.netloc)
         conn.putheader("X-Api-Key", API_KEY)
         conn.putheader("X-File-Hash", file_hash)
         conn.putheader("X-Filename", filename)
