@@ -96,7 +96,7 @@ SERVER_URL = os.environ.get("BANDBOX_SERVER_URL", "https://bandbox.example.com")
 API_KEY = os.environ.get("BANDBOX_API_KEY", "change-me")
 
 UPLOAD_INTERVAL = 120          # seconds between upload sweeps
-UPLOAD_TIMEOUT = 300           # seconds per file (200 MB over decent Wi-Fi)
+UPLOAD_TIMEOUT = 3600          # seconds per file (4 GB over 10 Mbit/s ≈ 55 min)
 UPLOAD_RETRIES = 3             # attempts per file
 MIN_FREE_SPACE_MB = 5000       # warn when SD card drops below this
 PISUGAR_SOCKET = "/tmp/pisugar-server.sock"
@@ -430,67 +430,73 @@ def find_audio_files():
 
 def upload_file(filepath, file_hash, filename):
     """
-    Upload one file to the BandBox server.
+    Upload one file to the BandBox server, streaming chunks straight
+    from disk (the WAVs can be 2–4 GB and the Pi only has 512 MB RAM).
+
     Returns 'accepted', 'duplicate', or 'error'.
     """
-    import urllib.request
-    import urllib.error
+    import http.client
+    from urllib.parse import urlsplit
 
-    url = f"{SERVER_URL.rstrip('/')}/api/upload"
+    parts = urlsplit(SERVER_URL.rstrip("/") + "/api/upload")
+    if parts.scheme not in ("http", "https"):
+        log.error("Bad server URL scheme: %s", parts.scheme)
+        return "error"
 
-    # Build multipart form data manually (no requests dependency)
-    boundary = f"----BandBox{int(time.time()*1000)}"
-    body_parts = []
+    host = parts.hostname
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    path = parts.path or "/"
+    if parts.query:
+        path = f"{path}?{parts.query}"
 
-    # hash field
-    body_parts.append(f"--{boundary}".encode())
-    body_parts.append(b'Content-Disposition: form-data; name="hash"')
-    body_parts.append(b"")
-    body_parts.append(file_hash.encode())
-
-    # filename field (original name on the USB stick)
-    body_parts.append(f"--{boundary}".encode())
-    body_parts.append(b'Content-Disposition: form-data; name="filename"')
-    body_parts.append(b"")
-    body_parts.append(filename.encode())
-
-    # file field
-    body_parts.append(f"--{boundary}".encode())
-    body_parts.append(
-        f'Content-Disposition: form-data; name="file"; filename="{filename}"'
-        .encode()
+    size = filepath.stat().st_size
+    conn_cls = (
+        http.client.HTTPSConnection
+        if parts.scheme == "https" else http.client.HTTPConnection
     )
-    body_parts.append(b"Content-Type: audio/wav")
-    body_parts.append(b"")
-    body_parts.append(filepath.read_bytes())
-
-    body_parts.append(f"--{boundary}--".encode())
-    body_parts.append(b"")
-
-    body = b"\r\n".join(body_parts)
-
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "X-Api-Key": API_KEY,
-        },
-        method="POST",
-    )
+    conn = conn_cls(host, port, timeout=UPLOAD_TIMEOUT)
 
     try:
-        with urllib.request.urlopen(req, timeout=UPLOAD_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("status", "accepted")
-    except urllib.error.HTTPError as e:
-        if e.code == 409:
+        # putrequest/putheader/endheaders lets us stream the body in
+        # 64 KB chunks. http.client.request() with a file-like body
+        # already does this internally, but we want explicit control
+        # over the buffer size and error handling around partial writes.
+        conn.putrequest("POST", path)
+        conn.putheader("Host", parts.netloc)
+        conn.putheader("X-Api-Key", API_KEY)
+        conn.putheader("X-File-Hash", file_hash)
+        conn.putheader("X-Filename", filename)
+        conn.putheader("Content-Type", "audio/wav")
+        conn.putheader("Content-Length", str(size))
+        conn.endheaders()
+
+        with open(filepath, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                conn.send(chunk)
+
+        resp = conn.getresponse()
+        body = resp.read()
+        if 200 <= resp.status < 300:
+            try:
+                data = json.loads(body.decode())
+                return data.get("status", "accepted")
+            except (ValueError, UnicodeDecodeError):
+                return "accepted"
+        if resp.status == 409:
             return "duplicate"
-        log.error("Upload HTTP error %d: %s", e.code, e.reason)
+        log.error(
+            "Upload HTTP %d: %s",
+            resp.status, body[:200].decode("utf-8", "replace").strip(),
+        )
         return "error"
-    except Exception as e:
+    except (OSError, http.client.HTTPException) as e:
         log.error("Upload failed: %s", e)
         return "error"
+    finally:
+        conn.close()
 
 
 def upload_with_retry(filepath, file_hash, filename):
