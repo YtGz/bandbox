@@ -27,3 +27,8 @@ project.inlang/cache/
 
 # Source assets (large files, not for git)
 assets/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
