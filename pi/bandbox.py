@@ -594,7 +594,7 @@ class Display:
             txt = "⚡" + txt
         d.text((bx - 30, 2), txt, font=font_sm, fill=0)
 
-        # wifi icon — draw filled arcs for current bars, dotted for missing
+        # wifi icon — draw one filled arc per signal bar (omit missing)
         if wifi:
             wx = WIDTH - 58
             for i, r in enumerate((3, 6, 9), 1):
@@ -603,29 +603,10 @@ class Display:
                         [wx - r, 14 - r, wx + r, 14 + r], 200, 340,
                         fill=0, width=1,
                     )
-                else:
-                    # dotted arc for missing bars
-                    self._draw_dotted_arc(wx, 14, r, 200, 340)
             d.ellipse([wx - 1, 13, wx + 1, 15], fill=0)
 
         # separator
         d.line([0, 18, WIDTH, 18], fill=0, width=1)
-
-    def _draw_dotted_arc(self, cx, cy, r, start, end):
-        """Draw a dotted arc (array of small dots along the arc path)."""
-        import math
-        d = self.draw
-        step_deg = 14  # ~deg between dots
-        dot_size = 2
-        for angle_deg in range(start, end + 1, step_deg):
-            rad = math.radians(angle_deg)
-            dx = int(r * math.cos(rad))
-            dy = int(r * math.sin(rad))
-            d.ellipse(
-                [cx + dx - dot_size // 2, cy - dy - dot_size // 2,
-                 cx + dx + dot_size // 2, cy - dy + dot_size // 2],
-                fill=0,
-            )
 
     # ── face drawing ───────────────────────────────────────
 
