@@ -594,9 +594,10 @@ class Display:
             txt = "⚡" + txt
         d.text((bx - 30, 2), txt, font=font_sm, fill=0)
 
-        # wifi icon — draw one filled arc per signal bar (omit missing)
+        # wifi icon — draw one filled arc per signal bar (omit missing).
+        # Sits to the LEFT of the battery percentage text.
         if wifi:
-            wx = WIDTH - 58
+            wx = WIDTH - 92
             for i, r in enumerate((3, 6, 9), 1):
                 if i <= wifi_bars:
                     d.arc(
@@ -685,7 +686,6 @@ class Display:
                 [rx - er, ry - 2, rx + er, ry + er], 200, 340, fill=0, width=2,
             )
             d.line([cx - 5, cy + 6, cx + 5, cy + 6], fill=0, width=1)
-            d.text((cx + 28, cy - 14), "z z z", font=font_sm, fill=0)
 
         # musical notes flanking the face
         self.draw_note(cx - 48, 28, size=7)
