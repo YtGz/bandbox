@@ -636,18 +636,25 @@ sudo install -m 0755 \
   ~/bandbox/pi/scripts/bandbox-umount-usb \
   /usr/local/sbin/
 
-sudo tee /etc/sudoers.d/bandbox-usb << 'EOF'
+sudo tee /etc/sudoers.d/zz-bandbox-usb << 'EOF'
 bandbox ALL=(root) NOPASSWD: /usr/local/sbin/bandbox-mount-usb, /usr/local/sbin/bandbox-umount-usb
 EOF
-sudo chmod 440 /etc/sudoers.d/bandbox-usb
-sudo visudo -cf /etc/sudoers.d/bandbox-usb   # syntax check
+sudo chmod 440 /etc/sudoers.d/zz-bandbox-usb
+sudo visudo -cf /etc/sudoers.d/zz-bandbox-usb   # syntax check
 ```
 
-> Verify with `sudo -n -l -U bandbox` — the two wrappers should appear
-> under "NOPASSWD". A bare `sudo -n mount …` rule looks tempting but
-> sudoers parses commas in the `-o ro,nosuid,nodev,noexec` argument as
-> command separators; the escape (`\,`) works on some distros and
-> silently doesn't on others, leaving you with the same
+> The filename starts with `zz-` deliberately. Sudo loads
+> `/etc/sudoers.d/` in alphabetical order and applies **last matching
+> rule wins**. The default `/etc/sudoers.d/wheel` grants bandbox the
+> blanket `(ALL:ALL) ALL` (which prompts for a password); any NOPASSWD
+> drop-in sorting before `wheel` is silently overridden by it.
+
+> Verify with `sudo -n -l -U bandbox` — the NOPASSWD line for the two
+> wrappers must appear **after** the `(ALL : ALL) ALL` entry from
+> `wheel`. A bare `sudo -n mount …` rule looks tempting but sudoers
+> parses commas in the `-o ro,nosuid,nodev,noexec` argument as command
+> separators; the escape (`\,`) works on some distros and silently
+> doesn't on others, leaving you with the same
 > "Something's off-key. / Can't read USB." screen this rule is meant
 > to prevent.
 
