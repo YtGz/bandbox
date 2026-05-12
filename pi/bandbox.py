@@ -742,10 +742,8 @@ class BandBox:
 
     def shutdown(self):
         log.info("BandBox shutting down")
-        self.screen("happy", "See ya!", sub="Rock on!")
-        time.sleep(2)
-        self.screen("sleeping", "z z z")
-        time.sleep(1)
+        self.screen("sleeping", "Shutting down...", sub="z z z")
+        time.sleep(5)  # wait for e-ink full refresh (~4 s on V4) to finish
         self.display.off()
 
     # ── USB handling ───────────────────────────────────────
