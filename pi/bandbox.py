@@ -428,7 +428,7 @@ def find_audio_files():
 # ════════════════════════════════════════════════════════════
 
 
-def upload_file(filepath, file_hash):
+def upload_file(filepath, file_hash, filename):
     """
     Upload one file to the BandBox server.
     Returns 'accepted', 'duplicate', or 'error'.
@@ -448,10 +448,16 @@ def upload_file(filepath, file_hash):
     body_parts.append(b"")
     body_parts.append(file_hash.encode())
 
+    # filename field (original name on the USB stick)
+    body_parts.append(f"--{boundary}".encode())
+    body_parts.append(b'Content-Disposition: form-data; name="filename"')
+    body_parts.append(b"")
+    body_parts.append(filename.encode())
+
     # file field
     body_parts.append(f"--{boundary}".encode())
     body_parts.append(
-        f'Content-Disposition: form-data; name="file"; filename="{filepath.name}"'
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"'
         .encode()
     )
     body_parts.append(b"Content-Type: audio/wav")
@@ -487,10 +493,10 @@ def upload_file(filepath, file_hash):
         return "error"
 
 
-def upload_with_retry(filepath, file_hash):
+def upload_with_retry(filepath, file_hash, filename):
     """Upload with exponential backoff. Returns 'accepted', 'duplicate', or 'error'."""
     for attempt in range(1, UPLOAD_RETRIES + 1):
-        result = upload_file(filepath, file_hash)
+        result = upload_file(filepath, file_hash, filename)
         if result in ("accepted", "duplicate"):
             return result
         if attempt < UPLOAD_RETRIES:
@@ -885,6 +891,12 @@ class BandBox:
             dest = STAGING_DIR / f"{file_hash}{src.suffix}"
             if not dest.exists():
                 shutil.copy2(src, dest)
+            # Sidecar with the original filename — the server requires
+            # it in the upload form. Re-written every time so we always
+            # have the freshest name even if the same hash shows up on
+            # a stick with a renamed file.
+            meta_path = STAGING_DIR / f"{file_hash}.meta.json"
+            meta_path.write_text(json.dumps({"filename": src.name}))
 
             now = time.time()
             if now - last_refresh > 0.8 or i == total:
@@ -941,6 +953,15 @@ class BandBox:
         for i, filepath in enumerate(staged, 1):
             # extract hash from filename (we named them {hash}.wav)
             file_hash = filepath.stem
+            meta_path = STAGING_DIR / f"{file_hash}.meta.json"
+
+            # Load the original USB filename from the sidecar written
+            # at staging time; fall back to the staging name (which is
+            # just `{hash}.wav`) if the sidecar got nuked somehow.
+            try:
+                filename = json.loads(meta_path.read_text())["filename"]
+            except (OSError, ValueError, KeyError):
+                filename = filepath.name
 
             self.screen(
                 "uploading", msg("uploading"),
@@ -949,11 +970,12 @@ class BandBox:
                 full=False,
             )
 
-            result = upload_with_retry(filepath, file_hash)
+            result = upload_with_retry(filepath, file_hash, filename)
 
             if result in ("accepted", "duplicate"):
                 self.journal.add(file_hash)
                 filepath.unlink()
+                meta_path.unlink(missing_ok=True)
                 uploaded += 1
                 if result == "accepted":
                     log.info("Uploaded %s", filepath.name)
@@ -992,20 +1014,27 @@ class BandBox:
         pct, _ = get_battery()
         now_str = datetime.now(TZ).strftime("%H:%M")
 
+        # Count only the audio files — `.meta.json` sidecars share the
+        # staging dir but aren't uploads in their own right.
+        def _pending():
+            return sum(
+                1 for f in STAGING_DIR.iterdir()
+                if f.is_file() and f.suffix in AUDIO_EXTENSIONS
+            )
+
         if 0 <= pct < 15:
             mood, status = "error", msg("low_battery")
         elif free_space_mb() < MIN_FREE_SPACE_MB:
             mood, status = "error", msg("low_space")
         else:
-            # count pending uploads
-            pending = len(list(STAGING_DIR.glob("*")))
+            pending = _pending()
             if pending > 0 and not has_internet():
                 mood, status = "chill", msg("no_wifi")
             else:
                 mood, status = "happy", msg("idle")
 
         detail = ""
-        pending = len(list(STAGING_DIR.glob("*")))
+        pending = _pending()
         if pending > 0:
             s = "s" if pending != 1 else ""
             detail = f"{pending} track{s} awaiting upload"

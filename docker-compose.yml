@@ -33,6 +33,9 @@ services:
       PI_API_KEY: ${PI_API_KEY}
       WORKER_API_KEY: ${WORKER_API_KEY}
       AUDIO_DATA_PATH: /data/audio
+      # SvelteKit/Bun reject request bodies larger than this many bytes
+      # (default 512 KB). Pi uploads are multi-MB WAVs, so bump it.
+      BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-524288000}
     expose:
       - '3000'
 
