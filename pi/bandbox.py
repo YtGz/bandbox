@@ -742,8 +742,11 @@ class BandBox:
 
     def shutdown(self):
         log.info("BandBox shutting down")
-        self.screen("sleeping", "Shutting down...", sub="z z z")
-        time.sleep(5)  # wait for e-ink full refresh (~4 s on V4) to finish
+        # Partial refresh — base image already set by idle screen, so this
+        # takes ~300 ms instead of ~4 s. Puts the final frame on screen
+        # before the PiSugar cuts power.
+        self.screen("sleeping", "Shutting down...", sub="z z z", full=False)
+        time.sleep(2)  # safety margin for the partial refresh + sleep cmd
         self.display.off()
 
     # ── USB handling ───────────────────────────────────────
