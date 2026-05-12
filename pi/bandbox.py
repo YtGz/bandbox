@@ -309,6 +309,40 @@ def wifi_name():
         return None
 
 
+def wifi_strength():
+    """Return (ssid:str|None, bars_0_to_3:int)."""
+    ssid = wifi_name()
+    if not ssid:
+        return None, 0
+    try:
+        lines = Path("/proc/net/wireless").read_text().strip().splitlines()
+        if len(lines) < 3:
+            return ssid, 0
+        # line 2 is the header, line 3+ are interfaces
+        for line in lines[2:]:
+            line = line.strip()
+            if not line.startswith("wlan"):
+                continue
+            parts = line.split()
+            # parts: [iface, status, link_quality, level_dBm, noise_dBm, ...]
+            level = int(float(parts[3]))
+            break
+        else:
+            return ssid, 0
+    except Exception:
+        return ssid, 0
+
+    # dBm thresholds: >= -50 = 3 bars, >= -60 = 2, >= -70 = 1, < -70 = 0
+    if level >= -50:
+        return ssid, 3
+    elif level >= -60:
+        return ssid, 2
+    elif level >= -70:
+        return ssid, 1
+    else:
+        return ssid, 0
+
+
 # ════════════════════════════════════════════════════════════
 #  HASHING
 # ════════════════════════════════════════════════════════════
@@ -540,7 +574,7 @@ class Display:
 
     # ── header bar ─────────────────────────────────────────
 
-    def draw_header(self, battery_pct, charging, wifi):
+    def draw_header(self, battery_pct, charging, wifi, wifi_bars):
         d = self.draw
 
         # title
@@ -560,17 +594,38 @@ class Display:
             txt = "⚡" + txt
         d.text((bx - 30, 2), txt, font=font_sm, fill=0)
 
-        # wifi icon
+        # wifi icon — draw filled arcs for current bars, dotted for missing
         if wifi:
             wx = WIDTH - 58
-            for r in (3, 6, 9):
-                d.arc(
-                    [wx - r, 14 - r, wx + r, 14 + r], 200, 340, fill=0, width=1,
-                )
+            for i, r in enumerate((3, 6, 9), 1):
+                if i <= wifi_bars:
+                    d.arc(
+                        [wx - r, 14 - r, wx + r, 14 + r], 200, 340,
+                        fill=0, width=1,
+                    )
+                else:
+                    # dotted arc for missing bars
+                    self._draw_dotted_arc(wx, 14, r, 200, 340)
             d.ellipse([wx - 1, 13, wx + 1, 15], fill=0)
 
         # separator
         d.line([0, 18, WIDTH, 18], fill=0, width=1)
+
+    def _draw_dotted_arc(self, cx, cy, r, start, end):
+        """Draw a dotted arc (array of small dots along the arc path)."""
+        import math
+        d = self.draw
+        step_deg = 14  # ~deg between dots
+        dot_size = 2
+        for angle_deg in range(start, end + 1, step_deg):
+            rad = math.radians(angle_deg)
+            dx = int(r * math.cos(rad))
+            dy = int(r * math.sin(rad))
+            d.ellipse(
+                [cx + dx - dot_size // 2, cy - dy - dot_size // 2,
+                 cx + dx + dot_size // 2, cy - dy + dot_size // 2],
+                fill=0,
+            )
 
     # ── face drawing ───────────────────────────────────────
 
@@ -713,11 +768,11 @@ class BandBox:
                progress=None, full=True):
         """Compose and push a full screen."""
         pct, chg = get_battery()
-        wi = wifi_name()
+        wi, wifi_bars = wifi_strength()
 
         dp = self.display
         dp.clear()
-        dp.draw_header(pct, chg, wi)
+        dp.draw_header(pct, chg, wi, wifi_bars)
         dp.draw_face(mood)
         dp.draw_status(status)
         if detail:
