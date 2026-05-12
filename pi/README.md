@@ -622,6 +622,27 @@ mkdir -p ~/staging
 sudo mkdir -p /mnt/bandbox-usb
 ```
 
+### Allow the bandbox user to mount the USB stick
+
+The service runs as the unprivileged `bandbox` user, but `mount(8)` and
+`umount(8)` need root (CAP_SYS_ADMIN). Grant just those two binaries,
+just for `/mnt/bandbox-usb`, with no password prompt — anything wider
+would let any user mount arbitrary filesystems anywhere:
+
+```bash
+sudo tee /etc/sudoers.d/bandbox-usb << 'EOF'
+bandbox ALL=(root) NOPASSWD: /usr/bin/mount -o ro\,nosuid\,nodev\,noexec /dev/sd[a-z][0-9] /mnt/bandbox-usb
+bandbox ALL=(root) NOPASSWD: /usr/bin/umount /mnt/bandbox-usb
+EOF
+sudo chmod 440 /etc/sudoers.d/bandbox-usb
+sudo visudo -cf /etc/sudoers.d/bandbox-usb   # syntax check
+```
+
+> The commas inside `-o` are escaped because sudoers treats commas as
+> argument separators. Without the backslashes the rule won't match and
+> `sudo -n mount …` will fail with `a password is required`, which the
+> e-ink shows as "Something's off-key. / Can't read USB."
+
 ### Install and start the service
 
 ```bash
@@ -687,6 +708,12 @@ The USB stick is never modified. Re-inserting the same stick is harmless — dup
 - Use the **data** micro-USB port (the one closer to the center), not the power port
 - Try a different OTG adapter
 - Check `lsblk` to see if the device appears
+- **Display says "Something's off-key / Can't read USB" but `lsblk` shows the stick?**
+  The service runs as the unprivileged `bandbox` user and `mount` is
+  refusing without a password. Install the sudoers rule from Step 5
+  ("Allow the bandbox user to mount the USB stick") and check the
+  journal — `journalctl -u bandbox -n 50` will show the exact
+  `mount … failed` line from `mount_usb`.
 
 ### Wi-Fi won't connect
 

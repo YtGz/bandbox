@@ -391,16 +391,30 @@ def find_usb_partition():
 
 
 def mount_usb(device):
-    MOUNT_POINT.mkdir(parents=True, exist_ok=True)
+    # We run as the unprivileged `bandbox` user, so mount(8) needs sudo.
+    # `-n` makes it fail fast instead of prompting if the sudoers rule in
+    # README §5 hasn't been installed — see "USB stick not detected".
     r = subprocess.run(
-        ["mount", "-o", "ro", device, str(MOUNT_POINT)], capture_output=True,
+        [
+            "sudo", "-n", "mount",
+            "-o", "ro,nosuid,nodev,noexec",
+            device, str(MOUNT_POINT),
+        ],
+        capture_output=True, text=True,
     )
+    if r.returncode != 0:
+        log.error(
+            "mount %s -> %s failed (rc=%d): %s",
+            device, MOUNT_POINT, r.returncode, (r.stderr or "").strip(),
+        )
     return r.returncode == 0
 
 
 def unmount_usb():
     subprocess.run(["sync"], capture_output=True)
-    subprocess.run(["umount", str(MOUNT_POINT)], capture_output=True)
+    subprocess.run(
+        ["sudo", "-n", "umount", str(MOUNT_POINT)], capture_output=True,
+    )
 
 
 def find_audio_files():
