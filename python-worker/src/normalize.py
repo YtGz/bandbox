@@ -1,48 +1,115 @@
-"""Loudness normalization to -14 LUFS with true-peak ceiling, output as FLAC."""
+"""Loudness normalization to -14 LUFS via ffmpeg's two-pass loudnorm filter."""
 
-import numpy as np
-import pyloudnorm as pyln
-import soundfile as sf
+import json
+import logging
+import re
+import subprocess
 
 
-TARGET_LUFS = -14.0
-PEAK_CEILING_DB = -1.0   # don't push true peaks above this
-PEAK_CEILING = 10 ** (PEAK_CEILING_DB / 20)
+log = logging.getLogger("bandbox.normalize")
+
+
+TARGET_I = -14.0    # integrated loudness, LUFS
+TARGET_TP = -1.0    # true peak ceiling, dBTP
+TARGET_LRA = 11.0   # loudness range, LU
+
+
+def _loudnorm_filter(measured=None):
+    """Build the ffmpeg `loudnorm` filter string, optionally with the
+    first-pass measurements baked in for a deterministic second pass."""
+    base = (
+        f"loudnorm=I={TARGET_I}:TP={TARGET_TP}:LRA={TARGET_LRA}"
+        ":print_format=json"
+    )
+    if measured is None:
+        return base
+    return (
+        base
+        + f":measured_I={measured['input_i']}"
+        + f":measured_TP={measured['input_tp']}"
+        + f":measured_LRA={measured['input_lra']}"
+        + f":measured_thresh={measured['input_thresh']}"
+        + f":offset={measured['target_offset']}"
+        + ":linear=true"
+    )
+
+
+def _parse_loudnorm_json(stderr: str) -> dict:
+    """ffmpeg prints the loudnorm JSON report at the tail of stderr."""
+    match = re.search(r"\{[^{}]*\"input_i\".*?\}", stderr, re.DOTALL)
+    if not match:
+        raise RuntimeError("loudnorm did not emit a JSON report")
+    return json.loads(match.group(0))
 
 
 def normalize(input_path: str, output_path: str) -> None:
     """
-    Read a WAV, loudness-normalize toward TARGET_LUFS while keeping the
-    true peak below PEAK_CEILING_DB, write as FLAC.
+    Read a WAV, run ffmpeg loudnorm (two-pass, with a true-peak
+    limiter at -1 dBTP), write as FLAC.
 
-    Band-practice recordings have a much higher crest factor than
-    mastered music — naive LUFS normalization would push transient
-    peaks well past 0 dBFS and a downstream `np.clip` would turn them
-    into audible distortion. Instead, compute the LUFS gain and the
-    peak-headroom gain, then apply whichever is *smaller* so we never
-    clip.
+    Why two passes?
+    `loudnorm` in single-pass mode does dynamic normalization (a
+    look-ahead compressor) which can pump on transient-heavy material
+     — fine for podcasts, ugly on drums. With measurements from a
+    first analysis pass and `linear=true`, the second pass just
+    applies a constant gain and engages the limiter only on samples
+    that would otherwise exceed -1 dBTP. Result: phone-friendly
+    loudness without distorted snare hits.
     """
-    data, rate = sf.read(input_path)
+    # `loudnorm` upsamples to 192 kHz internally; if we don't pin
+    # output sample rate, ffmpeg's encoder writes the file at 192 kHz
+    # which inflates FLAC size 4× with no audible benefit. Detect the
+    # source rate and force the second pass back down to it.
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=sample_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            input_path,
+        ],
+        capture_output=True, text=True, check=True,
+    )
+    src_rate = probe.stdout.strip() or "48000"
 
-    # pyloudnorm needs a 2D array even for mono input.
-    if data.ndim == 1:
-        data = data[:, np.newaxis]
+    # ── pass 1: measure ──────────────────────────────────────
+    pass1 = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-nostats",
+            "-i", input_path,
+            "-af", _loudnorm_filter(),
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True, check=True,
+    )
+    measured = _parse_loudnorm_json(pass1.stderr)
+    log.debug(
+        "loudnorm pass 1: I=%s LUFS, TP=%s dBTP, LRA=%s LU",
+        measured.get("input_i"),
+        measured.get("input_tp"),
+        measured.get("input_lra"),
+    )
 
-    meter = pyln.Meter(rate)
-    loudness = meter.integrated_loudness(data)
-
-    peak = float(np.max(np.abs(data)))
-
-    # Silent or near-silent file → just transcode.
-    if peak < 1e-8 or np.isinf(loudness) or np.isnan(loudness):
-        sf.write(output_path, data, rate, format="FLAC")
+    # If the file is effectively silent, loudnorm reports input_i as
+    # "-inf" and the second pass refuses to run. Just transcode.
+    if measured.get("input_i") in ("-inf", "-70.0") or \
+       float(measured.get("input_i", -70.0)) <= -70.0:
+        subprocess.run(
+            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+             "-i", input_path, "-c:a", "flac", output_path],
+            check=True,
+        )
         return
 
-    # Linear gain factors for each goal.
-    lufs_gain = 10 ** ((TARGET_LUFS - loudness) / 20)
-    peak_gain = PEAK_CEILING / peak
-
-    # Honour the tighter of the two constraints.
-    gain = min(lufs_gain, peak_gain)
-
-    sf.write(output_path, data * gain, rate, format="FLAC")
+    # ── pass 2: apply ────────────────────────────────────────
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", input_path,
+            "-af", _loudnorm_filter(measured),
+            "-ar", src_rate,
+            "-c:a", "flac",
+            output_path,
+        ],
+        check=True,
+    )
