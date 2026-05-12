@@ -594,11 +594,11 @@ class Display:
             txt = "⚡" + txt
         tb = d.textbbox((0, 0), txt, font=font_sm)
         tw = tb[2] - tb[0]
-        d.text((bx - tw - 3, 2), txt, font=font_sm, fill=0)
+        d.text((bx - tw - 1, 2), txt, font=font_sm, fill=0)
 
         # wifi icon — to the RIGHT of the battery icon, in the gap to the edge
         if wifi:
-            wx, wy = WIDTH - 11, 11
+            wx, wy = WIDTH - 8, 11
             for i, r in enumerate((3, 6, 9), 1):
                 if i <= wifi_bars:
                     d.arc(
