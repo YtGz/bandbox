@@ -292,7 +292,13 @@ def _call_llm(report: str) -> dict:
         },
         timeout=120,
     )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        log.error(
+            "LLM API error %d: %s",
+            resp.status_code,
+            resp.text[:1000],
+        )
+        resp.raise_for_status()
 
     data = resp.json()
 
