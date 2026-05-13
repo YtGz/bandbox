@@ -287,7 +287,6 @@ def _call_llm(report: str) -> dict:
             "messages": [
                 {"role": "user", "content": report},
             ],
-            "temperature": 0.3,
             "max_tokens": 2000,
         },
         timeout=120,
