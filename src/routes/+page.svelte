@@ -5,6 +5,7 @@
   import RecordingCard from '$lib/components/RecordingCard.svelte';
   import ProcessingBanner from '$lib/components/ProcessingBanner.svelte';
   import StuckRecordings from '$lib/components/StuckRecordings.svelte';
+  import UploadButton from '$lib/components/UploadButton.svelte';
   import type { Id } from '$convex/_generated/dataModel';
   import type { SongRecording } from '$lib/types';
 
@@ -50,9 +51,18 @@
       songId
     });
   }
+
+  function handleUploaded() {
+    // Convex reactive queries will auto-update; this is just for any page-level feedback if needed
+  }
 </script>
 
 <div class="flex flex-col gap-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
+    <UploadButton onuploaded={handleUploaded} />
+  </div>
+
   <!-- Processing banner -->
   <ProcessingBanner count={processing.length} />
 
