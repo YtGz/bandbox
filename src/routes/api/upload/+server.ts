@@ -40,9 +40,12 @@ export const POST: RequestHandler = async ({ request }) => {
 
   // ── 3. Create recording in Convex (also dedups) ───────────
   const client = new ConvexHttpClient(getConvexUrl());
+  const fileModifiedHeader = request.headers.get('X-File-Modified');
+  const recordedAt = fileModifiedHeader ? parseInt(fileModifiedHeader, 10) : undefined;
   const recordingId = await client.mutation(api.recordings.create, {
     filename,
-    fileHash
+    fileHash,
+    recordedAt
   });
 
   if (recordingId === null) {

@@ -51,7 +51,7 @@ export const run = mutation({
       filename: 'ZOOM0042.wav',
       fileHash:
         'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
-      uploadedAt: now - 14 * day,
+      recordedAt: now - 14 * day,
       state: 'grouped',
       songId: carrionThrone,
       pathFlac: 'carrion_take1.flac',
@@ -73,7 +73,7 @@ export const run = mutation({
       filename: 'ZOOM0043.wav',
       fileHash:
         'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
-      uploadedAt: now - 14 * day + 1800000,
+      recordedAt: now - 14 * day + 1800000,
       state: 'grouped',
       songId: carrionThrone,
       pathFlac: 'carrion_take2.flac',
@@ -93,7 +93,7 @@ export const run = mutation({
       filename: 'ZOOM0051.wav',
       fileHash:
         'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
-      uploadedAt: now - 7 * day,
+      recordedAt: now - 7 * day,
       state: 'grouped',
       songId: carrionThrone,
       pathFlac: 'carrion_take3.flac',
@@ -115,7 +115,7 @@ export const run = mutation({
       filename: 'ZOOM0044.wav',
       fileHash:
         'd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
-      uploadedAt: now - 10 * day,
+      recordedAt: now - 10 * day,
       state: 'grouped',
       songId: voidTremor,
       pathFlac: 'void_take1.flac',
@@ -137,7 +137,7 @@ export const run = mutation({
       filename: 'ZOOM0052.wav',
       fileHash:
         'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
-      uploadedAt: now - 3 * day,
+      recordedAt: now - 3 * day,
       state: 'grouped',
       songId: voidTremor,
       pathFlac: 'void_take2.flac',
@@ -157,7 +157,7 @@ export const run = mutation({
       filename: 'ZOOM0053.wav',
       fileHash:
         'f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1',
-      uploadedAt: now - 5 * day,
+      recordedAt: now - 5 * day,
       state: 'grouped',
       songId: ossuary,
       pathFlac: 'ossuary_take1.flac',
@@ -179,7 +179,7 @@ export const run = mutation({
       filename: 'ZOOM0054.wav',
       fileHash:
         'a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8c9d0e1f2a7b8',
-      uploadedAt: now - 1 * day,
+      recordedAt: now - 1 * day,
       state: 'ungrouped',
       pathFlac: 'unknown_take1.flac',
       pathSong: 'unknown_take1_song.opus',
@@ -199,7 +199,7 @@ export const run = mutation({
       filename: 'ZOOM0055.wav',
       fileHash:
         'b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9d0e1f2a3b8c9',
-      uploadedAt: now - 1 * day + 600000,
+      recordedAt: now - 1 * day + 600000,
       state: 'ungrouped',
       pathFlac: 'unknown_take2.flac',
       pathSong: 'unknown_take2_song.opus',
@@ -218,7 +218,7 @@ export const run = mutation({
       filename: 'ZOOM0060.wav',
       fileHash:
         'c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0e1f2a3b4c9d0',
-      uploadedAt: now,
+      recordedAt: now,
       state: 'analyzing'
     });
 
@@ -227,7 +227,7 @@ export const run = mutation({
       filename: 'ZOOM0061.wav',
       fileHash:
         'd0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1f2a3b4c5d0e1',
-      uploadedAt: now,
+      recordedAt: now,
       state: 'normalizing'
     });
 
@@ -249,7 +249,7 @@ export const run = mutation({
       filename: 'ZOOM0050.wav',
       fileHash:
         'e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2a3b4c5d6e1f2',
-      uploadedAt: setDate,
+      recordedAt: setDate,
       state: 'ready',
       setId: rehearsalSet,
       pathFlac: 'sets/set_rehearsal1.flac',

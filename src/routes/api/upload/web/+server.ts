@@ -60,7 +60,8 @@ export const POST: RequestHandler = async ({ request }) => {
   const client = new ConvexHttpClient(getConvexUrl());
   const recordingId = await client.mutation(api.recordings.create, {
     filename,
-    fileHash
+    fileHash,
+    recordedAt: file.lastModified
   });
 
   if (recordingId === null) {

@@ -68,7 +68,7 @@
     <div class="flex items-center gap-2">
       {#if index !== undefined}
         <span class="text-sm font-medium text-zinc-500">
-          {formatDate(recording.uploadedAt)} — Take {index + 1}
+          {formatDate(recording.recordedAt)} — Take {index + 1}
         </span>
       {:else}
         <span class="truncate text-sm text-zinc-400">

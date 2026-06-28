@@ -450,6 +450,7 @@ def upload_file(filepath, file_hash, filename):
         path = f"{path}?{parts.query}"
 
     size = filepath.stat().st_size
+    mtime = filepath.stat().st_mtime
     conn_cls = (
         http.client.HTTPSConnection
         if parts.scheme == "https" else http.client.HTTPConnection
@@ -469,6 +470,7 @@ def upload_file(filepath, file_hash, filename):
         conn.putheader("X-Api-Key", API_KEY)
         conn.putheader("X-File-Hash", file_hash)
         conn.putheader("X-Filename", filename)
+        conn.putheader("X-File-Modified", str(int(mtime * 1000)))
         conn.putheader("Content-Type", "audio/wav")
         conn.putheader("Content-Length", str(size))
         conn.endheaders()

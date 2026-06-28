@@ -99,7 +99,7 @@ export const listProcessing = query({
       results.push(...recs);
     }
     return results.filter((r) => {
-      const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+      const updatedAt = r.stateUpdatedAt ?? r.recordedAt ?? now;
       return now - updatedAt < STUCK_THRESHOLD_MS;
     });
   }
@@ -135,11 +135,11 @@ export const listStuck = query({
     }
     return results
       .filter((r) => {
-        const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+        const updatedAt = r.stateUpdatedAt ?? r.recordedAt ?? now;
         return now - updatedAt >= STUCK_THRESHOLD_MS;
       })
       .map((r) => {
-        const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+        const updatedAt = r.stateUpdatedAt ?? r.recordedAt ?? now;
         return { ...r, stuckForMs: now - updatedAt };
       });
   }
@@ -170,7 +170,8 @@ export const listSets = query({
 export const create = mutation({
   args: {
     filename: v.string(),
-    fileHash: v.string()
+    fileHash: v.string(),
+    recordedAt: v.optional(v.number())
   },
   returns: v.union(v.id('recordings'), v.null()),
   handler: async (ctx, args) => {
@@ -184,7 +185,7 @@ export const create = mutation({
       kind: 'song',
       filename: args.filename,
       fileHash: args.fileHash,
-      uploadedAt: Date.now(),
+      recordedAt: args.recordedAt ?? Date.now(),
       state: 'uploading',
       stateUpdatedAt: Date.now()
     });
@@ -252,7 +253,7 @@ export const classifyAsSet = mutation({
       kind: 'set',
       filename: recording.filename,
       fileHash: recording.fileHash,
-      uploadedAt: recording.uploadedAt,
+      recordedAt: recording.recordedAt,
       state: 'normalizing',
       stateUpdatedAt: Date.now(),
       durationSec: args.durationSec
@@ -502,7 +503,7 @@ export const recoverStuck = mutation({
 
     let count = 0;
     for (const rec of results) {
-      const updatedAt = rec.stateUpdatedAt ?? rec.uploadedAt ?? now;
+      const updatedAt = rec.stateUpdatedAt ?? rec.recordedAt ?? now;
       if (now - updatedAt < STUCK_THRESHOLD_MS) continue;
 
       if (rec.kind === 'song') {

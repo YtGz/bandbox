@@ -31,7 +31,7 @@ export default defineSchema({
         kind: v.literal('song'),
         filename: v.string(),
         fileHash: v.string(),
-        uploadedAt: v.number(),
+        recordedAt: v.number(),
         state: v.union(
           v.literal('uploading'),
           v.literal('normalizing'),
@@ -65,7 +65,7 @@ export default defineSchema({
         kind: v.literal('set'),
         filename: v.string(),
         fileHash: v.string(),
-        uploadedAt: v.number(),
+        recordedAt: v.number(),
         state: v.union(
           v.literal('uploading'),
           v.literal('normalizing'),

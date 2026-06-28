@@ -50,7 +50,7 @@
       <p class="text-xs text-zinc-500">
         {recordings.length} take{recordings.length === 1 ? '' : 's'}
         {#if latestRecording}
-          · Latest: {formatDate(latestRecording.uploadedAt)}
+          · Latest: {formatDate(latestRecording.recordedAt)}
         {/if}
       </p>
     </div>
