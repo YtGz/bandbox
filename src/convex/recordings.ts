@@ -200,6 +200,7 @@ export const updateState = mutation({
     pathSong: v.optional(v.string()),
     pathPre: v.optional(v.string()),
     pathPost: v.optional(v.string()),
+    pathFull: v.optional(v.string()),
     pathOpus: v.optional(v.string()),
     cutStartSec: v.optional(v.number()),
     cutEndSec: v.optional(v.number()),

@@ -36,7 +36,10 @@ def split_and_encode(
 ) -> dict[str, str]:
     """Split a FLAC into pre/song/post segments and encode to Opus.
 
-    Returns a dict with keys: pathSong, pathPre, pathPost (relative paths).
+    Also encodes the full un-trimmed FLAC so ungrouped recordings can be
+    previewed before assignment.
+
+    Returns a dict with keys: pathSong, pathPre, pathPost, pathFull (relative paths).
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -79,5 +82,13 @@ def split_and_encode(
         encode_opus(str(post_path), str(post_opus))
         post_path.unlink()
         paths["pathPost"] = f"{recording_id}_post.opus"
+
+    # Full un-trimmed recording (for preview before grouping)
+    full_path = out / f"{recording_id}_full.wav"
+    full_opus = out / f"{recording_id}_full.opus"
+    sf.write(str(full_path), data, rate)
+    encode_opus(str(full_path), str(full_opus))
+    full_path.unlink()
+    paths["pathFull"] = f"{recording_id}_full.opus"
 
     return paths

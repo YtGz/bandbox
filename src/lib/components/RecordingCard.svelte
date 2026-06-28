@@ -32,11 +32,13 @@
   );
 
   const audioSrc = $derived(
-    recording.pathSong
-      ? `/api/audio/${recording.pathSong}`
-      : recording.pathFlac
-        ? `/api/audio/${recording.pathFlac}`
-        : null
+    recording.state === 'ungrouped' && recording.pathFull
+      ? `/api/audio/${recording.pathFull}`
+      : recording.pathSong
+        ? `/api/audio/${recording.pathSong}`
+        : recording.pathFlac
+          ? `/api/audio/${recording.pathFlac}`
+          : null
   );
 
   const flacDownloadUrl = $derived(
@@ -139,7 +141,7 @@
           }}
         >
           <option value="">Assign to song...</option>
-          {#each songs as song}
+          {#each songs as song (song._id)}
             <option value={song._id}>{song.title}</option>
           {/each}
           <option value="__new__">+ Create new song</option>
@@ -159,7 +161,7 @@
           }}
         >
           <option value="">Move to...</option>
-          {#each songs as song}
+          {#each songs as song (song._id)}
             <option value={song._id}>{song.title}</option>
           {/each}
         </select>
