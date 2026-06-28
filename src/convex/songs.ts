@@ -110,7 +110,8 @@ export const dissolve = mutation({
     for (const rec of recordings) {
       await ctx.db.patch(rec._id, {
         songId: undefined,
-        state: 'ungrouped'
+        state: 'ungrouped',
+        stateUpdatedAt: Date.now()
       });
     }
     await ctx.db.delete(args.songId);

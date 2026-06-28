@@ -282,6 +282,17 @@ def run() -> None:
 
     client = ConvexWorkerClient()
 
+    # Recover any recordings orphaned by a previous worker crash. Recordings
+    # stuck in a processing state longer than the Convex-side threshold are
+    # moved to a recoverable state (reprocess/ungrouped/ready) so the UI stops
+    # showing "Analyzing... N remaining" forever.
+    try:
+        count = client.recover_stuck()
+        if count:
+            log.info("Recovered %d stuck recording(s) on startup", count)
+    except Exception:
+        log.exception("Failed to recover stuck recordings on startup")
+
     # Check beat tracker availability and notify frontend
     if not HAS_MADMOM:
         log.warning("⚠️  madmom-modern not available — beat tracking quality degraded")

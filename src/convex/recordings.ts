@@ -1,6 +1,23 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 
+/**
+ * How long a recording may stay in a processing state before it's considered
+ * stuck. The worker polls every POLL_INTERVAL seconds and normalizes/trims/
+ * analyzes can each take a few minutes, so 10 minutes is a safe ceiling —
+ * anything older almost certainly means the worker died mid-pipeline.
+ */
+export const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
+
+/** Processing states for the song and set pipelines. */
+const SONG_PROCESSING_STATES = [
+  'uploading',
+  'normalizing',
+  'trimming',
+  'analyzing'
+] as const;
+const SET_PROCESSING_STATES = ['uploading', 'normalizing'] as const;
+
 /** Get a single recording by ID. */
 export const get = query({
   args: { recordingId: v.id('recordings') },
@@ -51,20 +68,19 @@ export const listByState = query({
   }
 });
 
-/** List all recordings currently being processed (both song and set pipelines). */
+/**
+ * List recordings currently being processed, excluding any that have been in a
+ * processing state long enough to be considered stuck (worker died). Stuck
+ * recordings are surfaced separately via `listStuck` so the UI can offer
+ * recovery instead of showing "Analyzing..." forever.
+ */
 export const listProcessing = query({
   args: {},
   returns: v.array(v.any()),
   handler: async (ctx) => {
-    const songStates = [
-      'uploading',
-      'normalizing',
-      'trimming',
-      'analyzing'
-    ] as const;
-    const setStates = ['uploading', 'normalizing'] as const;
+    const now = Date.now();
     const results = [];
-    for (const state of songStates) {
+    for (const state of SONG_PROCESSING_STATES) {
       const recs = await ctx.db
         .query('recordings')
         .withIndex('by_kind_and_state', (q) =>
@@ -73,7 +89,7 @@ export const listProcessing = query({
         .collect();
       results.push(...recs);
     }
-    for (const state of setStates) {
+    for (const state of SET_PROCESSING_STATES) {
       const recs = await ctx.db
         .query('recordings')
         .withIndex('by_kind_and_state', (q) =>
@@ -82,7 +98,50 @@ export const listProcessing = query({
         .collect();
       results.push(...recs);
     }
-    return results;
+    return results.filter((r) => {
+      const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+      return now - updatedAt < STUCK_THRESHOLD_MS;
+    });
+  }
+});
+
+/**
+ * List recordings stuck in a processing state longer than STUCK_THRESHOLD_MS.
+ * These are likely orphaned by a worker that died mid-pipeline.
+ */
+export const listStuck = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const results = [];
+    for (const state of SONG_PROCESSING_STATES) {
+      const recs = await ctx.db
+        .query('recordings')
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'song').eq('state', state)
+        )
+        .collect();
+      results.push(...recs);
+    }
+    for (const state of SET_PROCESSING_STATES) {
+      const recs = await ctx.db
+        .query('recordings')
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'set').eq('state', state)
+        )
+        .collect();
+      results.push(...recs);
+    }
+    return results
+      .filter((r) => {
+        const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+        return now - updatedAt >= STUCK_THRESHOLD_MS;
+      })
+      .map((r) => {
+        const updatedAt = r.stateUpdatedAt ?? r.uploadedAt ?? now;
+        return { ...r, stuckForMs: now - updatedAt };
+      });
   }
 });
 
@@ -126,7 +185,8 @@ export const create = mutation({
       filename: args.filename,
       fileHash: args.fileHash,
       uploadedAt: Date.now(),
-      state: 'uploading'
+      state: 'uploading',
+      stateUpdatedAt: Date.now()
     });
   }
 });
@@ -163,6 +223,10 @@ export const updateState = mutation({
         cleanPatch[key] = value;
       }
     }
+    // Stamp the state change time so we can detect stuck recordings
+    if (cleanPatch.state !== undefined) {
+      cleanPatch.stateUpdatedAt = Date.now();
+    }
     await ctx.db.patch(recordingId, cleanPatch);
     return null;
   }
@@ -189,6 +253,7 @@ export const classifyAsSet = mutation({
       fileHash: recording.fileHash,
       uploadedAt: recording.uploadedAt,
       state: 'normalizing',
+      stateUpdatedAt: Date.now(),
       durationSec: args.durationSec
     });
     return null;
@@ -220,7 +285,8 @@ export const assignToSong = mutation({
 
     await ctx.db.patch(args.recordingId, {
       songId: args.songId,
-      state: 'grouped'
+      state: 'grouped',
+      stateUpdatedAt: Date.now()
     });
     return null;
   }
@@ -291,7 +357,10 @@ export const scheduleReprocess = mutation({
       await ctx.db.delete(riff._id);
     }
 
-    await ctx.db.patch(args.recordingId, { state: 'reprocess' });
+    await ctx.db.patch(args.recordingId, {
+      state: 'reprocess',
+      stateUpdatedAt: Date.now()
+    });
     return null;
   }
 });
@@ -319,11 +388,174 @@ export const scheduleReprocessFlagged = mutation({
           await ctx.db.delete(riff._id);
         }
 
-        await ctx.db.patch(rec._id, { state: 'reprocess' });
+        await ctx.db.patch(rec._id, {
+          state: 'reprocess',
+          stateUpdatedAt: Date.now()
+        });
         count++;
       }
     }
     return count;
+  }
+});
+
+/**
+ * Recover a single stuck recording. Called by the UI when a user taps
+ * "Recover" on a recording that has been in a processing state too long.
+ *
+ * - Song with a FLAC: move to `reprocess` so the worker re-runs analysis
+ *   from the existing normalized FLAC (deletes stale riffs first).
+ * - Song without a FLAC (stuck in uploading/normalizing before normalize
+ *   ran): move to `ungrouped` so it's visible and the user can delete it.
+ * - Set with a FLAC: move to `ready` (sets have no analysis step); without a
+ *   FLAC, leave as-is — there's nothing to show.
+ *
+ * Returns the new state so the caller can confirm what happened.
+ */
+export const recoverRecording = mutation({
+  args: { recordingId: v.id('recordings') },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const recording = await ctx.db.get(args.recordingId);
+    if (!recording) throw new Error('Recording not found');
+
+    const isProcessingState =
+      (recording.kind === 'song' &&
+        SONG_PROCESSING_STATES.includes(
+          recording.state as (typeof SONG_PROCESSING_STATES)[number]
+        )) ||
+      (recording.kind === 'set' &&
+        SET_PROCESSING_STATES.includes(
+          recording.state as (typeof SET_PROCESSING_STATES)[number]
+        ));
+
+    if (!isProcessingState) {
+      throw new Error('Recording is not in a processing state');
+    }
+
+    if (recording.kind === 'song') {
+      if (recording.pathFlac) {
+        const riffs = await ctx.db
+          .query('riffs')
+          .withIndex('by_recording', (q) =>
+            q.eq('recordingId', args.recordingId)
+          )
+          .collect();
+        for (const riff of riffs) {
+          await ctx.db.delete(riff._id);
+        }
+        await ctx.db.patch(args.recordingId, {
+          state: 'reprocess',
+          stateUpdatedAt: Date.now()
+        });
+        return 'reprocess';
+      }
+      await ctx.db.patch(args.recordingId, {
+        state: 'ungrouped',
+        stateUpdatedAt: Date.now()
+      });
+      return 'ungrouped';
+    }
+
+    // Set recording
+    if (recording.pathFlac) {
+      await ctx.db.patch(args.recordingId, {
+        state: 'ready',
+        stateUpdatedAt: Date.now()
+      });
+      return 'ready';
+    }
+    throw new Error('Set recording has no FLAC — cannot recover');
+  }
+});
+
+/**
+ * Recover all stuck recordings in one shot. Called by the worker on startup
+ * to clear any recordings orphaned by a previous crash. Returns the count of
+ * recordings recovered.
+ */
+export const recoverStuck = mutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const results = [];
+    for (const state of SONG_PROCESSING_STATES) {
+      const recs = await ctx.db
+        .query('recordings')
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'song').eq('state', state)
+        )
+        .collect();
+      results.push(...recs);
+    }
+    for (const state of SET_PROCESSING_STATES) {
+      const recs = await ctx.db
+        .query('recordings')
+        .withIndex('by_kind_and_state', (q) =>
+          q.eq('kind', 'set').eq('state', state)
+        )
+        .collect();
+      results.push(...recs);
+    }
+
+    let count = 0;
+    for (const rec of results) {
+      const updatedAt = rec.stateUpdatedAt ?? rec.uploadedAt ?? now;
+      if (now - updatedAt < STUCK_THRESHOLD_MS) continue;
+
+      if (rec.kind === 'song') {
+        if (rec.pathFlac) {
+          const riffs = await ctx.db
+            .query('riffs')
+            .withIndex('by_recording', (q) => q.eq('recordingId', rec._id))
+            .collect();
+          for (const riff of riffs) {
+            await ctx.db.delete(riff._id);
+          }
+          await ctx.db.patch(rec._id, {
+            state: 'reprocess',
+            stateUpdatedAt: Date.now()
+          });
+        } else {
+          await ctx.db.patch(rec._id, {
+            state: 'ungrouped',
+            stateUpdatedAt: Date.now()
+          });
+        }
+      } else if (rec.pathFlac) {
+        await ctx.db.patch(rec._id, {
+          state: 'ready',
+          stateUpdatedAt: Date.now()
+        });
+      } else {
+        // No FLAC and no way forward — skip, recoverRecording can still handle
+        // individual ones from the UI if needed.
+        continue;
+      }
+      count++;
+    }
+    return count;
+  }
+});
+
+/**
+ * Permanently delete a recording and its riffs. Intended for stuck recordings
+ * that have no recoverable audio (e.g. stuck in uploading with no FLAC).
+ */
+export const deleteRecording = mutation({
+  args: { recordingId: v.id('recordings') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const riffs = await ctx.db
+      .query('riffs')
+      .withIndex('by_recording', (q) => q.eq('recordingId', args.recordingId))
+      .collect();
+    for (const riff of riffs) {
+      await ctx.db.delete(riff._id);
+    }
+    await ctx.db.delete(args.recordingId);
+    return null;
   }
 });
 

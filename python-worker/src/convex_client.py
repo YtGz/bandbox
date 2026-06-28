@@ -139,6 +139,16 @@ class ConvexWorkerClient:
         resp.raise_for_status()
         return resp.json()["recordings"]
 
+    def recover_stuck(self) -> int:
+        """Recover recordings stuck in processing states. Returns count."""
+        resp = self._client.post(
+            f"{self.base_url}/worker/recoverStuck",
+            json={},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()["count"]
+
     def set_system_warning(self, key: str, message: str) -> None:
         """Create or update a system warning shown in the frontend."""
         resp = self._client.post(

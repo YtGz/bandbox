@@ -41,6 +41,7 @@ export default defineSchema({
           v.literal('ungrouped'),
           v.literal('reprocess')
         ),
+        stateUpdatedAt: v.optional(v.number()),
         songId: v.optional(v.id('songs')),
         pathFlac: v.optional(v.string()),
         pathSong: v.optional(v.string()),
@@ -69,6 +70,7 @@ export default defineSchema({
           v.literal('normalizing'),
           v.literal('ready')
         ),
+        stateUpdatedAt: v.optional(v.number()),
         setId: v.optional(v.id('sets')),
         pathFlac: v.optional(v.string()),
         pathOpus: v.optional(v.string()),

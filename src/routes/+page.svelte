@@ -4,6 +4,7 @@
   import SongGroup from '$lib/components/SongGroup.svelte';
   import RecordingCard from '$lib/components/RecordingCard.svelte';
   import ProcessingBanner from '$lib/components/ProcessingBanner.svelte';
+  import StuckRecordings from '$lib/components/StuckRecordings.svelte';
   import type { Id } from '$convex/_generated/dataModel';
   import type { SongRecording } from '$lib/types';
 
@@ -12,6 +13,7 @@
   const songsQuery = useQuery(api.songs.list);
   const ungroupedQuery = useQuery(api.recordings.listUngrouped);
   const processingQuery = useQuery(api.recordings.listProcessing);
+  const stuckQuery = useQuery(api.recordings.listStuck);
 
   const songs = $derived(songsQuery.data ?? []);
   const ungrouped = $derived(
@@ -20,6 +22,7 @@
     )
   );
   const processing = $derived(processingQuery.data ?? []);
+  const stuck = $derived(stuckQuery.data ?? []);
 
   const songsOnly = $derived(
     songs.map((s) => ({
@@ -52,6 +55,11 @@
 <div class="flex flex-col gap-6">
   <!-- Processing banner -->
   <ProcessingBanner count={processing.length} />
+
+  <!-- Stuck recordings (worker crashed mid-pipeline) -->
+  {#if stuck.length > 0}
+    <StuckRecordings recordings={stuck} />
+  {/if}
 
   <!-- Loading state -->
   {#if songsQuery.isLoading}

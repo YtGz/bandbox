@@ -259,6 +259,22 @@ http.route({
   })
 });
 
+/** POST /worker/recoverStuck — recover recordings stuck in processing states. */
+http.route({
+  path: '/worker/recoverStuck',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    if (!authenticateWorker(request)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const count = await ctx.runMutation(api.recordings.recoverStuck, {});
+    return new Response(JSON.stringify({ ok: true, count }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  })
+});
+
 /** POST /worker/setSystemWarning — create or update a system warning. */
 http.route({
   path: '/worker/setSystemWarning',
